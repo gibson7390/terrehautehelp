@@ -191,8 +191,19 @@ const EVAL_CASES = (() => {
   ce("crisis", "leaving my abuser", dv);
   ce("crisis", "my ex is stalking me", {first:"crisis-002"}, {review:"stalking is not named in the data"});
   /* Review findings (Codex): mixed urgent needs keep both guidance cards and every explicit need */
+  /* Second review: emergency-specific resources must precede routine help, without promoting every Crisis listing. */
   ce("crisis", "someone overdosed and i want to die and i need food pantry",
-    {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"], any:["food-008","food-009","food-010","food-011","food-012"], an:12}, {src:"codex"});
+    {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"], any:["food-008","food-009","food-010","food-011","food-012"], an:12,
+     ahead:[["crisis-004","food"],["crisis-001","food"]], notAhead:[["crisis-003","food"],["crisis-005","food"],["crisis-008","food"]]}, {src:"codex"});
+  ce("crisis", "i want to die and need food pantry",
+    {urgentAll:["mental-crisis"], ahead:[["crisis-001","food"]], notAhead:[["crisis-003","food"]], needs:[["food-008","food-009","food-010","food-011","food-012","food-003","food-001"]]}, {src:"codex2"});
+  /* Second review: genuine phrases with ordinary continuations, and past tense */
+  ce("crisis", "i am cutting myself while alone", mental, {src:"codex2"});
+  ce("crisis", "i want to kill myself over this", mental, {src:"codex2"});
+  ce("crisis", "i self harmed", mental, {src:"codex2"});
+  ce("crisis", "cutting myself a piece of cake but i want to die", mental, {src:"codex2"});
+  ce("crisis", "i want to end it with my boyfriend because i want to die", mental, {src:"codex2"});
+  ce("crisis", "i want to end it all", mental, {src:"codex2"});
   ce("crisis", "i want to die and someone overdosed", {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"]}, {src:"codex"});
   ce("crisis", "i want to die and my friend is odd", {urgentAll:["mental-crisis"], first:"crisis-001", notCat:["pet"]}, {src:"codex"});
   ce("crisis", "my friend is odd and i want to die", {urgentAll:["mental-crisis"], first:"crisis-001", notCat:["pet"]}, {src:"codex"});
@@ -230,6 +241,9 @@ const EVAL_CASES = (() => {
   look("lookalike", "my friend is odd", {g:null, not:["crisis-004"]}, {src:"codex"});
   look("lookalike", "cutting myself a piece of cake", {g:null, not:["crisis-001"]}, {src:"codex"});
   look("lookalike", "this homework is killing me", {g:null, not:["crisis-001"], any:["education-008"]}, {src:"codex"});
+  look("lookalike", "i want to end it with my boyfriend and start dating other people", {g:null, not:["crisis-001"]}, {src:"codex2"});
+  look("lookalike", "i cut myself shaving", {g:null, not:["crisis-001"]}, {src:"codex2"});
+  look("lookalike", "killing myself laughing", {g:null, not:["crisis-001"]}, {src:"codex2"});
   look("lookalike", "killing it at my new job", noCrisis);
   look("lookalike", "dying to find a job", {...noCrisis, cats:{in:["employment"], n:2}}, {review:"idiom"});
   look("lookalike", "safe place for my kids after school", {g:null, any:["children-004","education-008"]}, {review:"could signal safety concern"});
@@ -250,7 +264,8 @@ const EVAL_CASES = (() => {
   rec("service", "co-ed sober living", {top:["recovery-010","recovery-011"], n:3});
   rec("service", "oxford house", {top:["recovery-004","recovery-005","recovery-008"], n:3});
   rec("service", "halfway house", {first:"recovery-009"});
-  rec("service", "free sober living", {first:"recovery-012"});
+  /* recovery-012 is documented free; recovery-002 charges $100/week and the Oxford Houses require an equal share of expenses. */
+  rec("service", "free sober living", {first:"recovery-012", before:[["recovery-012","recovery-002"],["recovery-010","recovery-002"],["recovery-010","recovery-004"]]});
   rec("service", "dual diagnosis", {top:["recovery-013","recovery-015"], n:3});
   rec("service", "medication assisted treatment", {first:"recovery-014"});
   rec("service", "MAT", {first:"recovery-014"});
@@ -585,6 +600,7 @@ const EVAL_CASES = (() => {
   multi("multi", "food for my kids", {any:["food-005","food-004","children-007"], an:5, notCat:["pet"]});
   multi("multi", "homeless with a dog", {has:["pet-001","housing-002"], any:["pet-001"], an:4}, {review:"no listing confirms pets are allowed in shelter"});
   multi("multi", "leaving abuse with my kids", {first:["crisis-002","children-006"], has:["housing-001"], not:["crisis-004"]});
+  multi("multi", "welding classes and a gas card", {needs:[["employment-004"], ["transport-005","employment-006"]], not:["children-005"]}, {src:"codex2"});
   multi("multi", "lost my job need help with bills", {any:["employment-001","employment-009"], an:5, has:["financial-002"], notTop:{ids:["financial-015"], n:3}});
   multi("multi", "no insurance need medicine", {any:["financial-016","health-002","health-009"], has:["financial-016"]});
   multi("multi", "just got out of jail need work", {any:["employment-002","employment-003","employment-012"], an:3});

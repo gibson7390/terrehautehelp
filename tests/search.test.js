@@ -38,12 +38,36 @@ const expect = {
   returned: id => r => r.ids.includes(id) ? null : `${id} not returned`,
   someCategory: (cat, n = Infinity) => r => r.categories.slice(0, n).includes(cat) ? null : `no ${cat} result${n === Infinity ? "" : ` in top ${n}`}`,
   anyReturned: ids => r => ids.some(id => r.ids.includes(id)) ? null : `none of ${ids.join(" ")} returned`,
+  /* Relative order by resource ID, never by score. */
+  aheadOfCategory: (id, cat) => r => {
+    const p = r.ids.indexOf(id);
+    if (p < 0) return `${id} not returned`;
+    const first = r.categories.indexOf(cat);
+    return first < 0 || p < first ? null : `${id} at #${p + 1}, after ${r.ids[first]} (#${first + 1}, ${cat})`;
+  },
+  notAheadOfCategory: (id, cat) => r => {
+    const p = r.ids.indexOf(id), first = r.categories.indexOf(cat);
+    return p < 0 || first < 0 || p > first ? null : `${id} at #${p + 1} is promoted ahead of every ${cat} result`;
+  },
+  before: (a, b) => r => {
+    const pa = r.ids.indexOf(a), pb = r.ids.indexOf(b);
+    if (pa < 0) return `${a} not returned`;
+    return pb < 0 || pa < pb ? null : `${a} at #${pa + 1} is not before ${b} at #${pb + 1}`;
+  },
+  categoryCount: (cat, min) => r => r.categories.filter(c => c === cat).length >= min ? null : `only ${r.categories.filter(c => c === cat).length} ${cat} results, expected at least ${min}`,
   status: s => r => r.status === s ? null : `status ${r.status}, expected ${s}`
 };
 
+/* Top two were previously asserted only as "Crisis category". That proxy
+   was replaced (second review) by the resources that are actually relevant:
+   the crisis line, Hamilton Center's crisis intervention (health-001), or
+   CODA's 24/7 crisis support, which held #2 before. */
 const mentalCrisis = [
   expect.urgent(MENTAL), expect.first("crisis-001"),
-  expect.noCategory("pet"), expect.topCategories(["crisis"], 2)
+  expect.noCategory("pet"), r => {
+    const off = r.ids.slice(0, 2).filter(id => !["crisis-001","health-001","crisis-002"].includes(id));
+    return off.length ? `top 2 include ${off.join(" ")}` : null;
+  }
 ];
 const domestic = [
   expect.first("crisis-002"), expect.inTop("housing-001", 5),
@@ -136,8 +160,64 @@ const CASES = [
   ["i want to die and someone overdosed", [expect.urgentList([OVERDOSE, MENTAL])]],
   ["someone overdosed and need food pantry and shelter and transportation", [
     expect.urgent(OVERDOSE), expect.returned("crisis-004"), expect.someCategory("food"),
-    expect.someCategory("housing"), expect.someCategory("transportation")
+    expect.someCategory("housing"), expect.someCategory("transportation"),
+    expect.aheadOfCategory("crisis-004", "food"), expect.aheadOfCategory("crisis-004", "housing")
   ]],
+
+  /* Second review: genuine crisis phrases with ordinary continuations */
+  ["i am cutting myself while alone", mentalCrisis],
+  ["i want to kill myself over this", mentalCrisis],
+  ["i self harmed", mentalCrisis],
+  ["i self-harmed last night", mentalCrisis],
+  ["i keep cutting myself on purpose", mentalCrisis],
+  /* ...and complete benign contexts, alone and alongside a genuine phrase */
+  ["i cut myself shaving", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i burned myself cooking dinner", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["killing myself laughing", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["cutting myself a piece of cake but i want to die", mentalCrisis],
+  ["i cut myself shaving and i keep cutting myself on purpose", mentalCrisis],
+  /* Relationship-ending language vs self-harm */
+  ["i want to end it with my boyfriend and start dating other people", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i want to end things with my husband", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i want to end it all", mentalCrisis],
+  ["i want to end it with my boyfriend because i want to die", mentalCrisis],
+
+  /* Emergency-specific resources rank before routine help; other needs stay */
+  ["someone overdosed and i want to die and i need food pantry", [
+    expect.aheadOfCategory("crisis-004", "food"), expect.aheadOfCategory("crisis-001", "food"),
+    expect.notAheadOfCategory("crisis-003", "food"), expect.notAheadOfCategory("crisis-005", "food"),
+    expect.notAheadOfCategory("crisis-008", "food"), expect.someCategory("food")
+  ]],
+  ["i want to die and need food pantry", [
+    expect.urgentList([MENTAL]), expect.aheadOfCategory("crisis-001", "food"),
+    expect.notAheadOfCategory("crisis-003", "food"), expect.someCategory("food")
+  ]],
+
+  /* Conservative typo support */
+  ["homles", [expect.inTop("housing-002", 3), expect.topCategories(["housing"], 3)]],
+  ["reab", [expect.status("ok"), expect.noResults()]],
+
+  /* Weak / category-only matches */
+  ["leaving abuse with my kids", [
+    expect.firstOneOf(["crisis-002","children-006"]), expect.returned("housing-001"), expect.absent("crisis-004")
+  ]],
+  ["i lost my id", [expect.absent("financial-015"), expect.anyReturned(["employment-008","other-003"])]],
+  ["Lost Creek", [expect.first("financial-015")]],
+  ["welding classes", [expect.first("employment-004"), expect.before("employment-004", "children-005")]],
+  ["cna classes", [expect.first("employment-004"), expect.before("employment-004", "children-005")]],
+  ["transportation", [expect.categoryCount("transportation", 8)]],
+  ["shelter", [expect.categoryCount("housing", 5)]],
+  ["food", [expect.categoryCount("food", 10)]],
+
+  /* Affordability among relevant results */
+  ["free sober living", [
+    expect.first("recovery-012"), expect.before("recovery-012", "recovery-002"),
+    expect.before("recovery-010", "recovery-002"), expect.before("recovery-010", "recovery-004")
+  ]],
+
+  /* Gas cards / vouchers are one service across categories */
+  ["gas voucher", [expect.first("transport-005"), expect.returned("employment-006"), expect.noCategory("housing")]],
+  ["gas card", [expect.returned("transport-005"), expect.returned("employment-006")]],
   ["help", [expect.status("empty-meaningful"), expect.urgent(null)]],
   ["food pantry", [expect.topCategories(["food"], 10), expect.notOnlyCategory("pet")]]
 ];
@@ -164,6 +244,12 @@ function runSuite() {
   const urlOk = !/href="\s*javascript:/i.test(unsafe) && safe.includes('href="https://example.org/x"');
   rows.push({query:"(renderCard allows only http/https website links)", result:{ids:[], urgent:null}, failures: urlOk ? [] : ["unsafe URL scheme rendered as a link"]});
   if (!urlOk) failed++;
+
+  /* Eligibility stays visible on a cross-category match. */
+  const gasCard = renderCard(RESOURCES.find(r => r.id === "employment-006"));
+  const eligibilityOk = gasCard.includes("Proof of employment offer.");
+  rows.push({query:"(employment-006 card shows its eligibility requirement)", result:{ids:[], urgent:null}, failures: eligibilityOk ? [] : ["requirement not shown"]});
+  if (!eligibilityOk) failed++;
 
   return {rows, failed, total: rows.length};
 }

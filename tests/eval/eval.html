@@ -3,7 +3,7 @@
   Search evaluation matrix. Open in a browser, or run headless (Windows):
     "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --dump-dom "file:///C:/Users/csmaj/Desktop/terrehautehelp/tests/eval/eval.html"
   Machine-readable results are in <script id="report-json">.
-  The holdout set runs only with ?holdout=1 — see README.md before using it.
+  The holdout set is not loaded unless the page is opened with ?holdout=1 — see README.md first.
 -->
 <html lang="en">
 <head>
@@ -27,7 +27,8 @@
   <script src="../../app.js"></script>
   <script src="cases.js"></script>
   <script src="variants.js"></script>
-  <script src="holdout.js"></script>
+  <!-- holdout.js is deliberately NOT loaded here. eval.js loads it only when
+       the page is opened with ?holdout=1. -->
   <script src="eval.js"></script>
 </body>
 </html>

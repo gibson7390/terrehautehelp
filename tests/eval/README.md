@@ -36,6 +36,11 @@ a passing run means these cases behave as expected, not that search is correct.
 | `has` | Each ID appears anywhere in the results | recall |
 | `needs` | For each group of IDs, at least one is returned (one result per explicit need) | recall |
 | `urgentAll` | Exact list of guidance cards, in order, e.g. `["overdose","mental-crisis"]` | guidance |
+| `ahead: [[id, cat]]` | `id` is returned and ranks above every result in category `cat` | recall / ranking |
+| `notAhead: [[id, cat]]` | If returned, `id` is not promoted above every `cat` result | precision |
+| `before: [[a, b]]` | `a` is returned and ranks before `b` (if `b` is returned) | recall / ranking |
+
+Order is always asserted by resource ID, never by score values.
 | `not`, `notCat`, `notTop`, `notFirst` | Excluded IDs or categories | precision |
 | `cats: {in, n}` | The top `n` results all belong to these categories | precision (recall if no results) |
 | `none` / `empty` / `max` | No results / the "enter a service" prompt / result-count ceiling | precision |
@@ -59,7 +64,7 @@ a passing run means these cases behave as expected, not that search is correct.
 
 ## Holdout policy
 
-`holdout.js` holds phrasings that were deliberately kept out of tuning.
+`holdout.js` holds phrasings that were deliberately kept out of tuning. `eval.html` does not load it: `eval.js` fetches it only when the page is opened with `?holdout=1`, so a default run never puts the reserved cases in the page.
 - Don't run it while changing search code.
 - Don't copy its phrases into `cases.js` or the lexicon.
 - Once a change is final, run `eval.html?holdout=1` once and record the result in the review.
@@ -71,4 +76,6 @@ a passing run means these cases behave as expected, not that search is correct.
 2. If you're unsure what the right answer is, add `review: "why"`. If the data lacks a suitable resource, add `gap: "why"`.
 3. Don't change an expectation to match current search output. Change it only when it misreads the data, and say so in a comment next to the case and in the commit message.
 
-Cases marked `src:"codex"` come from the code review of the search-safety branch.
+Cases marked `src:"codex"` and `src:"codex2"` come from the first and second code reviews of the search-safety branch.
+
+Case IDs are positional (`multi-11` is the 11th multi case), so adding a case renumbers later IDs in its group. Compare runs by query text, not by ID.

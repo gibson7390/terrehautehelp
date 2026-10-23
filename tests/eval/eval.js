@@ -52,6 +52,21 @@ function evalCheck(c, r) {
     }
   }
   (e.has || []).forEach(id => { if (pos(id) < 0) fail("recall", `${id} not returned`); });
+  /* Relative order by resource ID. */
+  (e.ahead || []).forEach(([id, cat]) => {
+    const p = pos(id), first = r.cats.indexOf(cat);
+    if (p < 0) fail("recall", `${id} not returned`);
+    else if (first >= 0 && p > first) fail("ranking", `${id} at #${p + 1} ranks after ${r.ids[first]} (#${first + 1}, ${cat})`);
+  });
+  (e.notAhead || []).forEach(([id, cat]) => {
+    const p = pos(id), first = r.cats.indexOf(cat);
+    if (p >= 0 && first >= 0 && p < first) fail("precision", `${id} at #${p + 1} is promoted ahead of every ${cat} result`);
+  });
+  (e.before || []).forEach(([a, b]) => {
+    const pa = pos(a), pb = pos(b);
+    if (pa < 0) fail("recall", `${a} not returned`);
+    else if (pb >= 0 && pa > pb) fail("ranking", `${a} at #${pa + 1} is not before ${b} at #${pb + 1}`);
+  });
   (e.needs || []).forEach(group => {
     if (!group.some(id => pos(id) >= 0)) fail("recall", `no result for need ${group.join("/")}`);
   });
@@ -103,6 +118,9 @@ function evalDescribe(e) {
   if (e.has) parts.push(`includes ${e.has.join(" ")}`);
   if (e.needs) parts.push(`one result per need: ${e.needs.map(g => g.join("/")).join(" + ")}`);
   if (e.urgentAll) parts.push(`guidance cards: ${e.urgentAll.join(", ") || "none"}`);
+  if (e.ahead) parts.push(e.ahead.map(([id, cat]) => `${id} ahead of all ${cat}`).join("; "));
+  if (e.notAhead) parts.push(e.notAhead.map(([id, cat]) => `${id} not promoted ahead of ${cat}`).join("; "));
+  if (e.before) parts.push(e.before.map(([a, b]) => `${a} before ${b}`).join("; "));
   if (e.cats) parts.push(`top ${e.cats.n} in ${e.cats.in.join("/")}`);
   if (e.not) parts.push(`excludes ${e.not.join(" ")}`);
   if (e.notCat) parts.push(`no ${e.notCat.join("/")} results`);
@@ -118,25 +136,38 @@ function evalValidate(cases) {
   cases.forEach(c => {
     const e = c.exp || {};
     const ids = [...[].concat(e.first || []), ...(e.top || []), ...(e.any || []), ...(e.has || []), ...(e.not || []),
-      ...(e.needs || []).flat(),
+      ...(e.needs || []).flat(), ...(e.ahead || []).map(([id]) => id), ...(e.notAhead || []).map(([id]) => id),
+      ...(e.before || []).flat(),
       ...(e.notFirst || []), ...((e.notTop || {}).ids || [])];
     ids.filter(id => !known.has(id)).forEach(id => errors.push(`${c.id}: unknown resource id ${id}`));
   });
   return errors;
 }
 
-function evalSuite() {
-  const includeHoldout = new URLSearchParams(location.search).has("holdout");
+/* The holdout file is fetched only on explicit request, so the default run
+   never loads (or exposes in the page) the reserved cases. */
+function evalLoadHoldout() {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "holdout.js";
+    script.onload = () => resolve(typeof EVAL_HOLDOUT !== "undefined" ? EVAL_HOLDOUT : []);
+    script.onerror = () => reject(new Error("holdout.js could not be loaded"));
+    document.body.appendChild(script);
+  });
+}
+
+function evalSuite(holdout) {
+  const includeHoldout = !!holdout;
   const written = EVAL_CASES;
   const variants = buildEvalVariants(written);
-  const all = [...written, ...variants, ...(includeHoldout ? EVAL_HOLDOUT : [])];
+  const all = [...written, ...variants, ...(holdout || [])];
   const authoringErrors = evalValidate(all);
   const rows = all.map(c => {
     const r = evalRun(c.query);
     const failures = evalCheck(c, r);
     return {...c, result:r, failures, ...evalClassify(c, failures)};
   });
-  return {rows, authoringErrors, includeHoldout, holdoutSize:EVAL_HOLDOUT.length};
+  return {rows, authoringErrors, includeHoldout, holdoutSize:holdout ? holdout.length : null};
 }
 
 function evalTally(rows) {
@@ -167,8 +198,9 @@ function evalSummaries(rows) {
   return {bySet, byGroup, byType};
 }
 
-function evalRender() {
-  const suite = evalSuite();
+async function evalRender() {
+  const holdout = new URLSearchParams(location.search).has("holdout") ? await evalLoadHoldout() : null;
+  const suite = evalSuite(holdout);
   const {rows} = suite;
   const {bySet, byGroup, byType} = evalSummaries(rows);
   const fails = rows.filter(r => r.outcome === "fail")
@@ -185,7 +217,7 @@ function evalRender() {
 
   document.getElementById("report").innerHTML = `
     ${suite.authoringErrors.length ? `<h2>Authoring errors</h2><ul>${suite.authoringErrors.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
-    <p>Holdout set: ${suite.includeHoldout ? "INCLUDED" : `${suite.holdoutSize} cases reserved, not run (add ?holdout=1 after an implementation is final)`}.</p>
+    <p>Holdout set: ${suite.includeHoldout ? `INCLUDED (${suite.holdoutSize} cases)` : "not loaded and not run (open with ?holdout=1 only once the candidate and expectations are frozen)"}.</p>
     <h2>By set</h2>
     ${table(["Set","Cases","Pass","Fail","Ambiguous","Missing data"], Object.entries(bySet).map(([k, t]) => tr([k, t.total, t.pass, t.fail, t.ambiguous, t["missing-data"]])))}
     <h2>Failures by group and severity</h2>

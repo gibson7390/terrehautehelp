@@ -76,19 +76,19 @@ const SEARCH_LEXICONS = {
        children context and "...and need shelter" keeps the shelter need.
        Words inside a match are never typo-corrected. Patterns require context
        so a lone "die", "cutting", "safe", "od" or "odd" is not a crisis, and
-       the lookaheads exclude idioms such as "hit me up" or "cutting myself a
-       piece of cake". The DV signal reuses the existing CODA / shelter concept;
-       it has no guidance card because the site has none. */
+       complete benign contexts (benignContexts below) are masked first. The DV
+       signal reuses the existing CODA / shelter concept; it has no guidance
+       card because the site has none. */
     crisisPhrases: [
       {signal:"suicide", urgent:"mental-crisis", tokens:["suicide"], patterns:[
         /\b(?:want|wanna|wanted|wish|wishing|ready|trying|try|plan|planning|planned|thinking about|thought about|deserve) (?:to )?(?:die|be dead|end it all|end it)\b/,
-        /\b(?:kill|killing|killed|hang|hanging|shoot|shooting) (?:my ?self|me self)\b(?! (?:laughing|working|over (?:this|it|nothing))\b)/,
+        /\b(?:kill|killing|killed|hang|hanging|shoot|shooting) (?:my ?self|me self)\b/,
         /\b(?:end|ending|take|taking) my (?:own )?life\b/,
         /\b(?:wish i (?:was|were) dead|better off dead|no reason to live|dont want to (?:live|be alive|wake up))\b/
       ]},
       {signal:"selfharm", urgent:"mental-crisis", tokens:["selfharm"], patterns:[
-        /\bself ?harm(?:ing|s)?\b/,
-        /\b(?:cut|cuts|cutting|hurt|hurting|harm|harming|burn|burning|burned) (?:my ?self|me self)\b(?! (?:a|an|some|another|off|slack|shaving|while|by accident|accidentally|cooking|playing|working|lifting)\b)/
+        /\bself ?harm(?:ing|s|ed|er)?\b/,
+        /\b(?:cut|cuts|cutting|hurt|hurting|harm|harming|burn|burning|burned) (?:my ?self|me self)\b/
       ]},
       {signal:"overdose", urgent:"overdose", tokens:["overdose"], patterns:[
         /\boverdos(?:e|ed|es|ing)\b/,
@@ -107,6 +107,20 @@ const SEARCH_LEXICONS = {
         /\babusive (?:boyfriend|girlfriend|husband|wife|partner|relationship|home|ex)\b/,
         /\b(?:leaving|left|escape|escaping|fleeing|away from) (?:my |an |the )?(?:abuser|abuse|abusive (?:home|relationship|partner|husband|wife|boyfriend|girlfriend))\b/
       ]}
+    ],
+
+    /* Complete ordinary sentences that contain a crisis-like phrase. Each is
+       masked before crisis matching, so only that span is excluded: a separate
+       explicit phrase in the same query ("...a piece of cake but i want to
+       die") is still recognised. Short continuations alone ("while", "over
+       this") are never treated as benign. */
+    benignContexts: [
+      /\bcut(?:s|ting)? (?:my ?self) (?:a|an|another|some) (?:piece|slice|bit|break)(?: of \w+)?\b/,
+      /\bcut(?:s|ting)? (?:my ?self) (?:some )?slack\b/,
+      /\b(?:cut|cuts|cutting|burn|burned|burnt|burning|hurt|hurting) (?:my ?self) (?:while )?(?:shaving|cooking(?: \w+)?|chopping \w+|on the (?:stove|oven|grill)|lifting \w+|working out|at the gym|at work|by accident)\b/,
+      /\baccidentally (?:cut|burned|burnt|hurt) (?:my ?self)\b/,
+      /\b(?:kill|killing|killed) (?:my ?self) laughing\b/,
+      /\b(?:end|ending|ended) (?:it|things|the relationship|our relationship|my relationship) with (?:my (?:boyfriend|girlfriend|husband|wife|partner|ex|fiance|fiancee|bf|gf)|him|her|them)\b/
     ],
 
     /* Single-word intent vocabulary. Values are relative intent strengths.
@@ -207,6 +221,32 @@ const SEARCH_LEXICONS = {
       "free","low","cost","service","services","program","programs","support","care","resource","resources",
       "class","classes","lost"
     ]),
+
+    /* Broad words for each category. A request using one of these is
+       browsing the category, so every listing in it is relevant. A request
+       naming a sub-service ("abuse", "dental", "snap") is not: listings that
+       match it only by category are left out when others describe it. */
+    broadTerms: {
+      food:["food","hungry","hunger","meal","meals","grocery","groceries"],
+      housing:["housing","shelter","homeless","homelessness","unhoused","sleep"],
+      health:["health","healthcare","medical","doctor","clinic","hospital"],
+      crisis:["crisis","emergency"],
+      recovery:["recovery","sober","sobriety","addiction","substance","drug","drugs","alcohol","rehab","rehabilitation"],
+      legal:["legal","lawyer","attorney","court"],
+      financial:["financial","money","bill","bills","benefits","assistance","cash","income","pay","paying"],
+      employment:["job","jobs","work","employment","career","workforce","hiring"],
+      education:["school","education","college","university","class","classes"],
+      children:["child","children","kid","kids","family","parent"],
+      senior:["senior","seniors","elderly","aging","older","grandma","grandpa","grandmother","grandfather"],
+      pet:["pet","pets","dog","dogs","cat","cats","animal","animals"],
+      immigration:["immigration","immigrant","immigrants"],
+      transportation:["transportation","bus","transit","ride","rides"],
+      other:["other","miscellaneous"]
+    },
+
+    /* Words asking for no-cost help. Matched listings are ordered by their
+       documented cost: explicitly free, then unknown, then explicitly paid. */
+    freeWords: new Set(["free"]),
 
     /* Multi-word concepts. Each entry represents a concept, not a one-off user
        sentence. "narrow" means category-only matches should not outrank the
@@ -423,13 +463,36 @@ function conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, da
     }
   });
 
-  if (bestDistance > maxDistance || !best.length) return token;
+  if (bestDistance > maxDistance || !best.length) return missingLettersCorrection(token, lexicon, vocabulary);
   if (best.length === 1) return best[0];
   /* A tie is resolved only when every candidate is a service term for the
      same categories (hungery → hunger / hungry, both Food). Otherwise the
      word is left as typed rather than silently choosing between services. */
   const intents = new Set(best.map(candidate => serviceCategoriesFor(candidate, lexicon)));
   return intents.size === 1 && !intents.has("") ? best.sort()[0] : token;
+}
+
+/* Fallback for a word with up to two letters left out ("homles" →
+   "homeless"), the most common low-literacy misspelling. Deliberately
+   narrow: only 5–7 letter words, only toward lexicon service terms with
+   the same first letter, only by adding letters, and only when every
+   candidate means the same service. */
+function missingLettersCorrection(token, lexicon, vocabulary) {
+  if (token.length < 5 || token.length > 7) return token;
+  const isSubsequence = (short, long) => {
+    let i = 0;
+    for (const ch of long) if (ch === short[i]) i++;
+    return i === short.length;
+  };
+  const candidates = [...vocabulary].filter(candidate =>
+    candidate[0] === token[0] &&
+    candidate.length > token.length && candidate.length - token.length <= 2 &&
+    serviceCategoriesFor(candidate, lexicon) &&
+    isSubsequence(token, candidate)
+  );
+  if (!candidates.length) return token;
+  const intents = new Set(candidates.map(candidate => serviceCategoriesFor(candidate, lexicon)));
+  return intents.size === 1 ? candidates.sort()[0] : token;
 }
 
 function categoryTermStrength(termMap, token) {
@@ -461,11 +524,17 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const signals = [];
   const lockedTokens = new Set();
   const crisisSpanWords = new Set();
+  /* Mask complete benign contexts with non-word characters of the same
+     length, so word boundaries elsewhere are unaffected. */
+  const crisisText = lexicon.benignContexts.reduce(
+    (text, pattern) => text.replace(new RegExp(pattern.source, "g"), span => "|".repeat(span.length)),
+    normalized
+  );
   lexicon.crisisPhrases.forEach(rule => {
     rule.patterns.forEach(pattern => {
       const global = new RegExp(pattern.source, "g");
       let match;
-      while ((match = global.exec(normalized))) {
+      while ((match = global.exec(crisisText))) {
         match[0].split(" ").forEach(word => { lockedTokens.add(word); crisisSpanWords.add(word); });
         if (!signals.includes(rule)) signals.push(rule);
         if (!match[0]) global.lastIndex++;
@@ -562,6 +631,17 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
 
   const directOtherQuery = meaningfulTokens.some(token => token === "other" || token === "miscellaneous");
 
+  /* Categories the person is browsing broadly: a broad word for that
+     category, or a situational phrase whose main category it is. */
+  const broadCategories = new Set(Object.keys(lexicon.broadTerms).filter(category =>
+    intentTokens.some(token => lexicon.broadTerms[category].includes(token) || lexicon.broadTerms[category].includes(stemSearchWord(token)))
+  ));
+  phraseConcepts.filter(concept => concept.situational).forEach(concept => {
+    const entries = Object.entries(concept.categories);
+    const primary = Math.max(...entries.map(([, strength]) => strength));
+    entries.forEach(([category, strength]) => { if (strength === primary) broadCategories.add(category); });
+  });
+
   /* Every applicable guidance card, overdose first. A query can describe
      more than one emergency and each keeps its own card. */
   const urgentKinds = new Set(signals.map(rule => rule.urgent).filter(Boolean));
@@ -579,6 +659,8 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     strongTokens: meaningfulTokens.filter(token => !lexicon.weakWords.has(token)),
     categoryScores,
     needScores,
+    broadCategories,
+    wantsFree: rawTokens.some(token => lexicon.freeWords.has(token)) || containsPhrase(normalized, "no cost"),
     phraseConcepts,
     hasNarrowPhrase: phraseConcepts.some(concept => concept.narrow),
     directOtherQuery,
@@ -659,6 +741,9 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
 
   const frequency = analysis.wordFrequency || new Map();
   let weakScore = 0;
+  /* A rare, non-category word this listing names ("welding", "breakfast"):
+     direct evidence of the specific service, kept even beside larger needs. */
+  let rareSpecific = false;
   analysis.tokens.forEach(token => {
     const stem = stemSearchWord(token);
     const serviceTerm = Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
@@ -675,7 +760,10 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
       score += specificDescription && rare ? SEARCH_SPECIFIC_DESCRIPTION_WEIGHT : weight;
       if (field === "category") return;
       matchedTokens.add(token);
-      if ((field === "name" || field === "tags" || specificDescription) && !otherService) specific = true;
+      if ((field === "name" || field === "tags" || specificDescription) && !otherService) {
+        specific = true;
+        if (rare && !serviceTerm) rareSpecific = true;
+      }
     });
   });
 
@@ -685,9 +773,11 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
   score += weakScore * (matchedTokens.size ? 1 : 0.5);
 
   let conceptHit = false;
+  let narrowConceptHit = false;
   analysis.phraseConcepts.forEach(concept => {
     if (!resourceContainsConcept(fields, concept)) return;
     conceptHit = true;
+    if (concept.narrow && !otherService) narrowConceptHit = true;
     if (!otherService) specific = true;
     if (concept.phrases.some(p => fields.name.includes(normalizeSearchText(p)))) score += 38;
     else if (concept.phrases.some(p => fields.tags.includes(normalizeSearchText(p)))) score += 32;
@@ -731,7 +821,32 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
     score *= 0.4;
   }
 
-  return {resource, score, matchedTokens:[...matchedTokens], specific, hasContent};
+  return {resource, score, matchedTokens:[...matchedTokens], specific, hasContent, narrowConceptHit, rareSpecific,
+    categoryIntent:intentStrength > 0, weakOnly:!hasContent && !(intentStrength > 0) && weakScore > 0};
+}
+
+/* Content that shows a listing is specifically relevant to a detected
+   emergency — not merely in the Crisis category. */
+const EMERGENCY_EVIDENCE = {
+  "overdose": ["911", "naloxone", "narcan", "overdose", "opioid"],
+  "mental-crisis": ["988", "crisis line", "suicide", "mental health crisis", "crisis intervention"]
+};
+
+function emergencyEvidence(resource, kind) {
+  const text = normalizeSearchText(`${resource.name} ${(resource.tags || []).join(" ")} ${resource.description}`);
+  return (EMERGENCY_EVIDENCE[kind] || []).some(term => containsPhrase(text, term));
+}
+
+/* Documented cost: "free" in the name, tags or description is no-cost
+   evidence; an explicit charge in the description or requirements is paid
+   evidence. Both, or neither, is unknown — never treated as free. A dollar
+   figure alone is not a charge ("Income under $60k" is a limit). */
+function documentedCost(resource) {
+  const offer = `${resource.name} ${(resource.tags || []).join(" ")} ${resource.description}`.toLowerCase();
+  const terms = `${resource.description} ${resource.requirements}`.toLowerCase();
+  const free = /\bfree\b|\bno cost\b|tuition-free|fare-free|fare free/.test(offer);
+  const paid = /\$\s?\d[\d.,]*\s*(?:\/|per\s)\s*(?:week|wk|month|mo|day|night)\b|\bcosts? \$\s?\d|\bpay equal share\b|\bself-pay\b|\bcash and credit\b/.test(terms);
+  return free && !paid ? "free" : paid && !free ? "paid" : "unknown";
 }
 
 /* Minimum need strength for a category to keep its own results floor; one
@@ -775,7 +890,39 @@ function searchResources(resources, rawQuery, language = "en") {
     return category in needMax ? Math.max(absoluteFloor, needMax[category] * relativeFloor) : threshold;
   };
 
-  const accepted = scored.filter(item => item.score >= thresholdFor(item));
+  const urgentKinds = analysis.urgentEmergencies || [];
+  const evidenceFor = item => urgentKinds.findIndex(kind => emergencyEvidence(item.resource, kind));
+  const anyContent = scored.some(item => item.hasContent);
+
+  const filtered = scored.filter(item => {
+    /* Listings that match only through generic words ("lost", "classes")
+       are dropped once any listing matches the request itself. */
+    if (item.weakOnly && anyContent) return false;
+    /* A listing in the requested category that matches only by category is
+       kept when the person is browsing that category broadly, but not when
+       they named a sub-service that other listings there describe. */
+    const category = item.resource.category;
+    if (!item.hasContent && item.categoryIntent && contentCategories.has(category) && !analysis.broadCategories.has(category)) return false;
+    /* The same narrow service in another category (gas cards offered by an
+       employment program) and emergency-specific listings stay in. */
+    if ((item.narrowConceptHit || item.rareSpecific) && item.score >= absoluteFloor) return true;
+    if (evidenceFor(item) >= 0 && item.score >= absoluteFloor) return true;
+    return item.score >= thresholdFor(item);
+  });
+
+  /* Ordering. Listings with evidence for a detected emergency come first,
+     in guidance order (overdose, then mental-health crisis); everything else
+     follows by relevance, keeping each additional need. When no-cost help
+     is requested, each group lists documented-free help first and
+     explicitly paid programs last. */
+  const costRank = {free:0, unknown:1, paid:2};
+  const accepted = filtered.map((item, index) => {
+    const evidence = evidenceFor(item);
+    return {item, index,
+      emergency: evidence < 0 ? urgentKinds.length : evidence,
+      cost: analysis.wantsFree ? costRank[documentedCost(item.resource)] : 0};
+  }).sort((a, b) => a.emergency - b.emergency || a.cost - b.cost || a.index - b.index).map(entry => entry.item);
+
   return {
     status:"ok",
     results:accepted.map(item => item.resource),
