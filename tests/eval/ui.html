@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+  Filter / reset behaviour checks. Must be served over http from the repo root,
+  e.g. http://localhost:8765/tests/eval/ui.html (an iframe on file:// is blocked).
+  Headless: msedge --headless=new --virtual-time-budget=120000 --dump-dom <url>
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Search UI checks</title>
+  <style>
+    body { font: 13px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 3px 6px; text-align: left; vertical-align: top; }
+    iframe { width: 1280px; height: 900px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <!-- The frame comes first so it stays on screen; off-screen frames may have
+       requestAnimationFrame throttled, which delays the page's rendering. -->
+  <iframe id="site" title="Site under test"></iframe>
+  <h1 id="summary">Running…</h1>
+  <table>
+    <thead><tr><th>Outcome</th><th>Severity</th><th>Kind</th><th>Check</th><th>Problem</th></tr></thead>
+    <tbody id="results"></tbody>
+  </table>
+  <script id="report-json" type="application/json"></script>
+  <script>
+    function esc(s){ return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  </script>
+  <script src="ui.js"></script>
+</body>
+</html>

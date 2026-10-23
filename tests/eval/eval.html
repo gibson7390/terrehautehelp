@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!--
+  Search evaluation matrix. Open in a browser, or run headless (Windows):
+    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --dump-dom "file:///C:/Users/csmaj/Desktop/terrehautehelp/tests/eval/eval.html"
+  Machine-readable results are in <script id="report-json">.
+  The holdout set runs only with ?holdout=1 — see README.md before using it.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Search evaluation</title>
+  <style>
+    body { font: 13px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+    th, td { border: 1px solid #ccc; padding: 3px 6px; text-align: left; vertical-align: top; }
+    th { background: #f1f1f1; position: sticky; top: 0; }
+    h2 { margin-top: 28px; }
+  </style>
+</head>
+<body>
+  <h1 id="summary">Running…</h1>
+  <div id="report"></div>
+  <script id="report-json" type="application/json"></script>
+  <script src="../../resources.js"></script>
+  <script src="../../app.js"></script>
+  <script src="cases.js"></script>
+  <script src="variants.js"></script>
+  <script src="holdout.js"></script>
+  <script src="eval.js"></script>
+</body>
+</html>
