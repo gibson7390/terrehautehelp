@@ -34,6 +34,8 @@ a passing run means these cases behave as expected, not that search is correct.
 | `top` + `n` | Each ID is in the top `n` (default 5) | recall / ranking |
 | `any` + `an` | At least one ID is in the top `an` (default 3) | recall / ranking |
 | `has` | Each ID appears anywhere in the results | recall |
+| `needs` | For each group of IDs, at least one is returned (one result per explicit need) | recall |
+| `urgentAll` | Exact list of guidance cards, in order, e.g. `["overdose","mental-crisis"]` | guidance |
 | `not`, `notCat`, `notTop`, `notFirst` | Excluded IDs or categories | precision |
 | `cats: {in, n}` | The top `n` results all belong to these categories | precision (recall if no results) |
 | `none` / `empty` / `max` | No results / the "enter a service" prompt / result-count ceiling | precision |
@@ -67,4 +69,6 @@ a passing run means these cases behave as expected, not that search is correct.
 
 1. Read the relevant entries in `resources.js` and write the expectation from the data.
 2. If you're unsure what the right answer is, add `review: "why"`. If the data lacks a suitable resource, add `gap: "why"`.
-3. Don't change an expectation to match current search output. Change it only when it misreads the data, and say so in the commit message.
+3. Don't change an expectation to match current search output. Change it only when it misreads the data, and say so in a comment next to the case and in the commit message.
+
+Cases marked `src:"codex"` come from the code review of the search-safety branch.

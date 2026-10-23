@@ -170,16 +170,81 @@ ui("crisis", "crisis guidance stays visible after choosing an unrelated category
   return s.urgent.includes("mentalCrisisTitle") ? [] : ["988 guidance removed when the Pet category is chosen"];
 }, {sev:"high"});
 
-ui("filter+search", "a search after choosing a category", async () => {
+ui("crisis", "overdose guidance stays visible after choosing Food", async () => {
+  await search("someone overdosed");
+  await click('.cat-row[data-category="food"]');
+  const s = state();
+  return s.urgent.includes("overdoseEmergencyTitle") && s.urgentFirst ? [] : ["911 guidance removed when the Food category is chosen"];
+}, {sev:"high", src:"codex"});
+ui("crisis", "Back to all clears urgent guidance, query and category", async () => {
+  await search("i want to die"); await click('.cat-row[data-category="pet"]'); await clear();
+  const s = state(), f = [];
+  if (s.shown) f.push("results still shown");
+  if (s.input) f.push(`input "${s.input}"`);
+  if (D().getElementById("mentalCrisisTitle")) f.push("guidance card still in the page");
+  await click('.cat-row[data-category="food"]');
+  const after = state();
+  if (after.urgent.length) f.push("guidance returned after reset");
+  if (after.ids.length !== G("RESOURCES").filter(r => r.category === "food").length) f.push("category filter not reset");
+  return f;
+}, {sev:"high"});
+
+/* Filters and search combine (decided in review): a category narrows the
+   active query; the filter is shown with an all-categories reset. */
+const filterState = () => {
+  const box = D().getElementById("resultsFilter");
+  const reset = D().getElementById("resultsFilterReset");
+  return {
+    text: box && box.offsetParent !== null ? box.textContent.replace(/\s+/g, " ").trim() : "",
+    reset: reset && reset.offsetParent !== null && reset.tagName === "BUTTON" ? reset : null
+  };
+};
+ui("filter+search", "a search after choosing a category stays in that category", async () => {
   await click('.cat-row[data-category="food"]'); await search("kids");
+  const s = state(), fs = filterState(), f = [];
+  if (!s.cats.every(c => c === "food")) f.push(`results outside Food (${[...new Set(s.cats)].join(", ")})`);
+  if (!/Food/.test(fs.text)) f.push("active Food filter not shown");
+  return f;
+});
+ui("filter+search", "choosing a category after a search narrows that search", async () => {
+  await search("kids"); await click('.cat-row[data-category="food"]');
+  const s = state(), fs = filterState(), f = [];
+  if (s.input !== "kids") f.push(`search box says "${s.input}"`);
+  if (!s.cats.every(c => c === "food")) f.push(`results outside Food (${[...new Set(s.cats)].join(", ")})`);
+  if (!s.ids.includes("food-005")) f.push("food-005 (school meals, tagged kids) missing");
+  if (!/Food/.test(fs.text)) f.push("active Food filter not shown");
+  return f;
+});
+ui("filter+search", "the all-categories reset keeps the query and widens results", async () => {
+  await search("kids"); await click('.cat-row[data-category="food"]');
+  const fs = filterState();
+  if (!fs.reset) return ["no visible all-categories button"];
+  await act(() => fs.reset.click());
+  const s = state(), f = [];
+  if (s.input !== "kids") f.push(`search box says "${s.input}"`);
+  if (!s.cats.some(c => c !== "food")) f.push("results still limited to Food");
+  if (filterState().text) f.push("filter still shown");
+  return f;
+});
+ui("filter+search", "the all-categories reset keeps urgent guidance", async () => {
+  await search("someone overdosed"); await click('.cat-row[data-category="food"]');
+  const fs = filterState();
+  if (!fs.reset) return ["no visible all-categories button"];
+  await act(() => fs.reset.click());
+  return state().urgent.includes("overdoseEmergencyTitle") ? [] : ["911 guidance missing after widening"];
+}, {sev:"high"});
+ui("filter+search", "choosing a category without a query lists the whole category", async () => {
+  await click('.cat-row[data-category="pet"]');
   const s = state();
-  return s.cats.every(c => c === "food") ? [] : [`results ignore the Food filter (${[...new Set(s.cats)].join(", ")})`];
-}, {review:"the page has no combined filter; it is unclear whether a search should stay within the chosen category"});
-ui("filter+search", "choosing a category after a search", async () => {
-  await search("kids"); await click('.cat-row[data-category="housing"]');
-  const s = state();
-  return s.input === "" ? [] : [`search box still says "${s.input}" while showing ${s.title}`];
-}, {sev:"low", review:"clearing vs keeping the query is a design choice"});
+  return s.ids.length === G("RESOURCES").filter(r => r.category === "pet").length && !filterState().text.includes("search") ? [] : [`${s.ids.length} results`];
+});
+ui("filter+search", "choosing another category replaces the active category", async () => {
+  await search("help with bills"); await click('.cat-row[data-category="financial"]'); await click('.cat-row[data-category="housing"]');
+  const s = state(), fs = filterState(), f = [];
+  if (!s.cats.every(c => c === "housing")) f.push(`results outside Housing (${[...new Set(s.cats)].join(", ")})`);
+  if (!/Housing/.test(fs.text) || /Financial/.test(fs.text)) f.push(`filter shows "${fs.text}"`);
+  return f;
+});
 
 async function runUi() {
   const rows = [];

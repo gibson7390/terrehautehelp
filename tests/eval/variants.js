@@ -59,8 +59,11 @@ function evalFormatVariant(query) {
 
 function buildEvalVariants(cases) {
   const known = evalKnownWords();
+  /* Rival meanings: every single-word service term and every word of a
+     lexicon phrase ("read" in "learn to read" competes with "rehab" for "reab"). */
   const serviceTerms = new Set();
   Object.values(SEARCH_LEXICONS.en.categoryTerms).forEach(m => Object.keys(m).forEach(w => serviceTerms.add(w)));
+  SEARCH_LEXICONS.en.phraseConcepts.forEach(c => c.phrases.forEach(p => normalizeSearchText(p).split(" ").forEach(w => w.length > 2 && serviceTerms.add(w))));
   const variants = [];
 
   cases.filter(c => !c.review && !c.gap && c.kind !== "edge" && c.query.trim()).forEach(c => {

@@ -34,7 +34,8 @@ const EVAL_CASES = (() => {
   food("service", "school lunch", {first:"food-005"}, {v:"lunch"});
   food("service", "free and reduced lunch", {first:"food-005"});
   food("service", "breakfast", {first:"food-006"});
-  food("service", "baby formula", {top:["children-007","food-004"], n:3});
+  /* Corrected: food-004 (WIC, food listing) does not mention formula; only children-007 says "formula support". */
+  food("service", "baby formula", {first:"children-007"});
   food("everyday", "i have no food", {cats:{in:["food"], n:5}});
   food("everyday", "we are out of food until payday", {cats:{in:["food"], n:3}});
   food("everyday", "im hungry", {cats:{in:["food"], n:5}, notCat:["pet"]});
@@ -189,6 +190,15 @@ const EVAL_CASES = (() => {
   ce("crisis", "i was raped", {first:"crisis-002", notCat:["pet"]});
   ce("crisis", "leaving my abuser", dv);
   ce("crisis", "my ex is stalking me", {first:"crisis-002"}, {review:"stalking is not named in the data"});
+  /* Review findings (Codex): mixed urgent needs keep both guidance cards and every explicit need */
+  ce("crisis", "someone overdosed and i want to die and i need food pantry",
+    {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"], any:["food-008","food-009","food-010","food-011","food-012"], an:12}, {src:"codex"});
+  ce("crisis", "i want to die and someone overdosed", {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"]}, {src:"codex"});
+  ce("crisis", "i want to die and my friend is odd", {urgentAll:["mental-crisis"], first:"crisis-001", notCat:["pet"]}, {src:"codex"});
+  ce("crisis", "my friend is odd and i want to die", {urgentAll:["mental-crisis"], first:"crisis-001", notCat:["pet"]}, {src:"codex"});
+  ce("crisis", "he od'd on fentanyl", od, {src:"codex"});
+  ce("crisis", "he hit me", dv, {src:"codex"});
+  ce("crisis", "he hits my children", {first:["crisis-002","children-006"], top:["children-006"], n:3, has:["housing-001"], notCat:["pet"]}, {src:"codex"});
 
   /* ── LOOK-ALIKES: ordinary phrases that resemble crisis phrases ───── */
   const look = add("lookalike");
@@ -214,7 +224,12 @@ const EVAL_CASES = (() => {
   look("lookalike", "odd jobs", {...noCrisis, cats:{in:["employment"], n:3}});
   look("lookalike", "od", noCrisis);
   look("lookalike", "die", noCrisis);
-  look("lookalike", "he hit me up about a job", {g:null, cats:{in:["employment"], n:2}}, {review:"slang; current DV pattern may match"});
+  /* Review flag removed: the review confirmed "hit me up" is slang for contacting someone. */
+  look("lookalike", "he hit me up about a job", {g:null, not:["crisis-002"], cats:{in:["employment"], n:2}});
+  look("lookalike", "she hit me up", {g:null, not:["crisis-002"]}, {src:"codex"});
+  look("lookalike", "my friend is odd", {g:null, not:["crisis-004"]}, {src:"codex"});
+  look("lookalike", "cutting myself a piece of cake", {g:null, not:["crisis-001"]}, {src:"codex"});
+  look("lookalike", "this homework is killing me", {g:null, not:["crisis-001"], any:["education-008"]}, {src:"codex"});
   look("lookalike", "killing it at my new job", noCrisis);
   look("lookalike", "dying to find a job", {...noCrisis, cats:{in:["employment"], n:2}}, {review:"idiom"});
   look("lookalike", "safe place for my kids after school", {g:null, any:["children-004","education-008"]}, {review:"could signal safety concern"});
@@ -280,7 +295,8 @@ const EVAL_CASES = (() => {
   legal("service", "tenant rights", {first:"legal-004"});
   legal("service", "small claims", {first:"legal-005"});
   legal("service", "protection order", {first:"legal-006"});
-  legal("service", "protective order", {first:"legal-006"}, {review:"data says 'protection order'"});
+  /* Review flag removed: legal-006 is the only protection-order resource, so the expectation is unambiguous. */
+  legal("service", "protective order", {first:"legal-006"});
   legal("service", "custody", {first:"legal-001"});
   legal("service", "divorce", {any:["legal-001","legal-007"]}, {gap:"no family-law resource names divorce"});
   legal("service", "bankruptcy", {first:"legal-010"});
@@ -387,7 +403,8 @@ const EVAL_CASES = (() => {
   const edu = add("education");
   edu("direct", "GED", {first:"education-001"});
   edu("direct", "education", {cats:{in:["education"], n:3}}, {v:"education"});
-  edu("service", "high school diploma", {top:["education-011","education-001"], n:3});
+  /* Corrected: education-001 offers GED prep and never mentions a diploma; only education-011 does. */
+  edu("service", "high school diploma", {first:"education-011"});
   edu("service", "adult education", {first:"education-001"});
   edu("service", "head start", {first:"education-002"});
   edu("service", "preschool", {first:"education-002"}, {v:"preschool"});
@@ -409,7 +426,8 @@ const EVAL_CASES = (() => {
   edu("service", "vocational rehab", {first:"education-010"});
   edu("everyday", "i want to finish high school", {first:["education-011","education-001"]});
   edu("everyday", "i never finished school", {any:["education-011","education-001"]});
-  edu("everyday", "learn to read", {first:"education-005"});
+  /* Corrected: education-001 also offers "adult literacy classes", so either literacy listing is a correct first result. */
+  edu("everyday", "learn to read", {first:["education-005","education-001"]});
   edu("everyday", "my kid needs help with homework", {first:"education-008"});
   edu("misspell", "colledge", {any:["education-006"]});
   edu("misspell", "tuturing", {first:"education-008"});
@@ -431,7 +449,8 @@ const EVAL_CASES = (() => {
   ch("service", "youth counseling", {first:"children-001"});
   ch("service", "DCS", {top:["children-009","children-002","children-010"], n:4});
   ch("service", "child welfare", {any:["children-009","children-002"], an:2});
-  ch("service", "CPS", {any:["children-009","children-002"]}, {review:"Indiana uses DCS; CPS is a common synonym"});
+  /* Review flag removed: the dataset's only child-welfare listings are the DCS ones (children-009, children-002). */
+  ch("service", "CPS", {any:["children-009","children-002"]});
   ch("service", "foster care", {first:"children-003", not:["senior-003"]});
   ch("service", "parenting classes", {top:["children-005","children-010"], n:2}, {v:"parenting"});
   ch("service", "reunification", {first:"children-010"});
@@ -584,6 +603,11 @@ const EVAL_CASES = (() => {
   multi("multi", "senior needs ride to doctor", {first:"transport-003"});
   multi("multi", "detox and then sober living", {has:["recovery-015"], cats:{in:["recovery"], n:3}});
   multi("multi", "veteran behind on utilities", {first:"financial-012"});
+  multi("multi", "my children od and need shelter and transportation",
+    {g:"overdose", needs:[["housing-001","housing-002","housing-006"], ["transport-001","transport-004"]]}, {src:"codex"});
+  multi("multi", "someone overdosed and need food pantry and shelter and transportation",
+    {g:"overdose", has:["crisis-004"], needs:[["food-008","food-009","food-010","food-011","food-012","food-003","food-001"],
+      ["housing-001","housing-002","housing-006"], ["transport-001","transport-004"]]}, {src:"codex"});
 
   /* ── AMBIGUOUS / GENERIC ──────────────────────────────────────────── */
   const amb = add("ambiguous");

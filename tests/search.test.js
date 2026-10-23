@@ -11,6 +11,7 @@ function run(query) {
   return {
     status: search.status,
     urgent: search.analysis.urgentEmergency,
+    urgentAll: search.analysis.urgentEmergencies || (search.analysis.urgentEmergency ? [search.analysis.urgentEmergency] : []),
     crisis: search.analysis.crisisMatches || [],
     ids: search.results.map(r => r.id),
     categories: search.results.map(r => r.category)
@@ -32,6 +33,11 @@ const expect = {
   noCategory: cat => r => r.categories.includes(cat) ? `includes ${cat} results (${r.ids.filter((_, i) => r.categories[i] === cat).join(" ")})` : null,
   notOnlyCategory: cat => r => r.ids.length && r.categories.every(c => c === cat) ? `results are ${cat}-only` : null,
   noResults: () => r => r.ids.length ? `expected no results, got ${r.ids.length}` : null,
+  urgentList: kinds => r => JSON.stringify(r.urgentAll) === JSON.stringify(kinds) ? null : `urgent guidance ${JSON.stringify(r.urgentAll)}, expected ${JSON.stringify(kinds)}`,
+  firstOneOf: ids => r => ids.includes(r.ids[0]) ? null : `first result ${r.ids[0] || "(none)"}, expected one of ${ids.join(" ")}`,
+  returned: id => r => r.ids.includes(id) ? null : `${id} not returned`,
+  someCategory: (cat, n = Infinity) => r => r.categories.slice(0, n).includes(cat) ? null : `no ${cat} result${n === Infinity ? "" : ` in top ${n}`}`,
+  anyReturned: ids => r => ids.some(id => r.ids.includes(id)) ? null : `none of ${ids.join(" ")} returned`,
   status: s => r => r.status === s ? null : `status ${r.status}, expected ${s}`
 };
 
@@ -100,6 +106,38 @@ const CASES = [
     expect.inTop("housing-003", 5), expect.inTop("financial-013", 5), expect.noCategory("pet")
   ]],
   ["zxqv blorpt", [expect.status("ok"), expect.noResults(), expect.urgent(null)]],
+
+  /* Review findings (Codex): false positives, each paired with a genuine match */
+  ["my friend is odd", [expect.urgent(null), expect.absent("crisis-004")]],
+  ["odd jobs", [expect.urgent(null), expect.absent("crisis-004")]],
+  ["he od'd on fentanyl", overdose],
+  ["i want to die and my friend is odd", [expect.urgentList([MENTAL]), expect.first("crisis-001"), expect.noCategory("pet")]],
+  ["my friend is odd and i want to die", [expect.urgentList([MENTAL]), expect.first("crisis-001"), expect.noCategory("pet")]],
+  ["she hit me up", [expect.urgent(null), expect.absent("crisis-002")]],
+  ["she hit me up about a job", [expect.urgent(null), expect.absent("crisis-002"), expect.firstCategory("employment")]],
+  ["he hit me", domestic],
+  ["cutting myself a piece of cake", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["this homework is killing me", [expect.urgent(null), expect.absent("crisis-001"), expect.inTop("education-008", 3)]],
+
+  /* Review findings: context words inside a crisis phrase must survive */
+  ["he hits my children", [
+    expect.firstOneOf(["crisis-002","children-006"]), expect.inTop("children-006", 3),
+    expect.returned("housing-001"), expect.noCategory("pet")
+  ]],
+  ["my children od and need shelter and transportation", [
+    expect.urgent(OVERDOSE), expect.someCategory("housing"), expect.someCategory("transportation")
+  ]],
+
+  /* Review findings: mixed urgent needs keep every explicit need */
+  ["someone overdosed and i want to die and i need food pantry", [
+    expect.urgentList([OVERDOSE, MENTAL]), expect.returned("crisis-004"), expect.returned("crisis-001"),
+    expect.anyReturned(["food-008","food-009","food-010","food-011","food-012"])
+  ]],
+  ["i want to die and someone overdosed", [expect.urgentList([OVERDOSE, MENTAL])]],
+  ["someone overdosed and need food pantry and shelter and transportation", [
+    expect.urgent(OVERDOSE), expect.returned("crisis-004"), expect.someCategory("food"),
+    expect.someCategory("housing"), expect.someCategory("transportation")
+  ]],
   ["help", [expect.status("empty-meaningful"), expect.urgent(null)]],
   ["food pantry", [expect.topCategories(["food"], 10), expect.notOnlyCategory("pet")]]
 ];
@@ -119,6 +157,13 @@ function runSuite() {
   const escapeOk = card.includes("&lt;img src=x onerror=alert(1)&gt;") && !card.includes("<img") && card.includes("&lt;b&gt;bold&lt;/b&gt;");
   rows.push({query:"(renderCard escapes HTML)", result:{ids:[], urgent:null}, failures: escapeOk ? [] : ["resource fields not escaped"]});
   if (!escapeOk) failed++;
+
+  /* Website links must be http(s); other schemes are not rendered as links. */
+  const unsafe = renderCard({id:"y", name:"Test", category:"food", description:"", website:"javascript:alert(1)"});
+  const safe = renderCard({id:"z", name:"Test", category:"food", description:"", website:"https://example.org/x"});
+  const urlOk = !/href="\s*javascript:/i.test(unsafe) && safe.includes('href="https://example.org/x"');
+  rows.push({query:"(renderCard allows only http/https website links)", result:{ids:[], urgent:null}, failures: urlOk ? [] : ["unsafe URL scheme rendered as a link"]});
+  if (!urlOk) failed++;
 
   return {rows, failed, total: rows.length};
 }

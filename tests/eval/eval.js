@@ -11,7 +11,8 @@ const TYPE_LABEL = {
 
 function evalRun(query) {
   const s = searchResources(RESOURCES, query, "en");
-  return {status:s.status, urgent:s.analysis.urgentEmergency, ids:s.results.map(r => r.id), cats:s.results.map(r => r.category)};
+  const urgentAll = s.analysis.urgentEmergencies || (s.analysis.urgentEmergency ? [s.analysis.urgentEmergency] : []);
+  return {status:s.status, urgent:s.analysis.urgentEmergency, urgentAll, ids:s.results.map(r => r.id), cats:s.results.map(r => r.category)};
 }
 
 function evalCheck(c, r) {
@@ -24,6 +25,9 @@ function evalCheck(c, r) {
   if (e.none && r.ids.length) fail("precision", `expected no results, got ${r.ids.length} (${top(3)})`);
   if (Object.prototype.hasOwnProperty.call(e, "g") && r.urgent !== e.g) {
     fail("guidance", `urgent guidance ${JSON.stringify(r.urgent)}, expected ${JSON.stringify(e.g)}`, "g");
+  }
+  if (e.urgentAll && JSON.stringify(r.urgentAll) !== JSON.stringify(e.urgentAll)) {
+    fail("guidance", `urgent guidance ${JSON.stringify(r.urgentAll)}, expected ${JSON.stringify(e.urgentAll)}`, "g");
   }
   if (e.first) {
     const ok = [].concat(e.first);
@@ -48,6 +52,9 @@ function evalCheck(c, r) {
     }
   }
   (e.has || []).forEach(id => { if (pos(id) < 0) fail("recall", `${id} not returned`); });
+  (e.needs || []).forEach(group => {
+    if (!group.some(id => pos(id) >= 0)) fail("recall", `no result for need ${group.join("/")}`);
+  });
   (e.not || []).forEach(id => { if (pos(id) >= 0) fail("precision", `${id} returned at #${pos(id) + 1}`); });
   (e.notCat || []).forEach(cat => {
     const hits = r.ids.filter((_, i) => r.cats[i] === cat);
@@ -94,6 +101,8 @@ function evalDescribe(e) {
   if (e.top) parts.push(`top ${e.n || 5}: ${e.top.join(" ")}`);
   if (e.any) parts.push(`one of ${e.any.join(" ")} in top ${e.an || 3}`);
   if (e.has) parts.push(`includes ${e.has.join(" ")}`);
+  if (e.needs) parts.push(`one result per need: ${e.needs.map(g => g.join("/")).join(" + ")}`);
+  if (e.urgentAll) parts.push(`guidance cards: ${e.urgentAll.join(", ") || "none"}`);
   if (e.cats) parts.push(`top ${e.cats.n} in ${e.cats.in.join("/")}`);
   if (e.not) parts.push(`excludes ${e.not.join(" ")}`);
   if (e.notCat) parts.push(`no ${e.notCat.join("/")} results`);
@@ -109,6 +118,7 @@ function evalValidate(cases) {
   cases.forEach(c => {
     const e = c.exp || {};
     const ids = [...[].concat(e.first || []), ...(e.top || []), ...(e.any || []), ...(e.has || []), ...(e.not || []),
+      ...(e.needs || []).flat(),
       ...(e.notFirst || []), ...((e.notTop || {}).ids || [])];
     ids.filter(id => !known.has(id)).forEach(id => errors.push(`${c.id}: unknown resource id ${id}`));
   });
