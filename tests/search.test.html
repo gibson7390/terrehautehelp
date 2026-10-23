@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<!--
+  Search safety regression tests.
+  Browser: open this file (or /tests/search.test.html from a local server).
+  Headless (Windows):
+    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless --disable-gpu --dump-dom "file:///C:/Users/csmaj/Desktop/terrehautehelp/tests/search.test.html"
+  The #summary element reads "PASS n of n" or "FAIL x of n".
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Search tests</title>
+  <style>
+    body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; vertical-align: top; }
+    tr.fail { background: #fde8e8; }
+    tr.pass td:first-child { color: #176b2c; }
+    tr.fail td:first-child { color: #a11; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1 id="summary">Running…</h1>
+  <table>
+    <thead><tr><th>Result</th><th>Query</th><th>Urgent guidance</th><th>Top results</th><th>Failures</th></tr></thead>
+    <tbody id="results"></tbody>
+  </table>
+  <script src="../resources.js"></script>
+  <script src="../app.js"></script>
+  <script src="search.test.js"></script>
+</body>
+</html>

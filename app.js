@@ -55,8 +55,51 @@ const SEARCH_LEXICONS = {
       "help","helps","helping","a","an","the","is","are","am","was","were","be","been","being",
       "for","to","with","in","at","of","on","near","around","from","and","or","but","do","does","did",
       "get","gets","getting","got","have","has","had","there","here","somewhere","anywhere","right","now",
-      "today","local","nearby","terre","haute","indiana","vigo","county"
+      "today","local","nearby","terre","haute","indiana","vigo","county",
+      "ned","nead","plz","pls"
     ]),
+
+    /* Ordinary words that typo correction must never rewrite. Each is a real
+       word one or two edits away from a service term (die→dog, stay→spay,
+       cut→cat), and silently changing it sends the search to the wrong place. */
+    protectedWords: new Set([
+      "die","died","dies","dying","dead","death","stay","stays","stayed","staying",
+      "safe","safely","safety","kill","killed","cut","cuts","hit","hits","hurt","hurts",
+      "harm","self","myself","papers","paper","country","hair","driving","drive",
+      "course","boyfriend","girlfriend","husband","wife","partner","pills","drinking"
+    ]),
+
+    /* Crisis phrases are matched against the normalized query BEFORE typo
+       correction and category scoring. Each match is replaced by its canonical
+       text, which then flows through the existing lexicon: "suicide" and
+       "selfharm" raise the existing 988 guidance, "overdose" the existing 911
+       guidance, and "domestic violence" the existing CODA / shelter concept.
+       Patterns require context so a lone "die", "cutting", "safe" or "od"
+       (my dog died, cutting hair classes, safe driving course) is not a crisis. */
+    crisisPhrases: [
+      {canonical:"suicide", patterns:[
+        /\b(?:want|wanna|wanted|wish|wishing|ready|trying|try|plan|planning|planned|thinking about|thought about|deserve) (?:to )?(?:die|be dead|end it all|end it)\b/,
+        /\b(?:kill|killing|killed|hang|hanging|shoot|shooting) (?:my ?self|me self)\b/,
+        /\b(?:end|ending|take|taking) my (?:own )?life\b/,
+        /\b(?:wish i (?:was|were) dead|better off dead|no reason to live|dont want to (?:live|be alive|wake up))\b/
+      ]},
+      {canonical:"selfharm", patterns:[
+        /\bself ?harm(?:ing|s)?\b/,
+        /\b(?:cut|cuts|cutting|hurt|hurting|harm|harming|burn|burning) (?:my ?self|me self)\b/
+      ]},
+      {canonical:"overdose", patterns:[
+        /\boverdos(?:e|ed|es|ing)\b/,
+        /\b(?:he|she|they|someone|somebody|i|im|friend|my \w+)(?: is| s| just| has| was| may have| might have| might be| think)? (?:od|ods|oded|odd|oding|odding)\b/,
+        /\b(?:od|ods|oded|oding|odding) (?:on|off)\b/
+      ]},
+      {canonical:"domestic violence", patterns:[
+        /\b(?:boyfriend|girlfriend|husband|wife|partner|spouse|ex|fiance|dad|father|stepdad|stepfather|mom|mother|he|she|they)(?: keeps| is| always| has been| has| just| will| still)? (?:hit|hits|hitting|beat|beats|beating|choke|chokes|choked|choking|strangled|abuse|abuses|abused|abusing|threaten|threatens|threatened|threatening|hurt|hurts|hurting|kicks|kicked|rapes|raped) (?:me|us|my (?:kids|children|son|daughter|baby))\b/,
+        /\b(?:dont|do not|not|never|no longer|cant|cannot) (?:feel |be |stay )?safe (?:at|in) (?:my )?(?:home|house|apartment|place)\b/,
+        /\bunsafe (?:at|in) (?:my )?(?:home|house|apartment)\b/,
+        /\b(?:scared|afraid) (?:of my|to go) (?:boyfriend|girlfriend|husband|wife|partner|ex|home)\b/,
+        /\babusive (?:boyfriend|girlfriend|husband|wife|partner|relationship|home|ex)\b/
+      ]}
+    ],
 
     /* Single-word intent vocabulary. Values are relative intent strengths.
        A term may intentionally appear in more than one category. */
@@ -150,6 +193,7 @@ const SEARCH_LEXICONS = {
       {phrases:["older adult","older adults"], categories:{senior:4.2}, narrow:true},
       {phrases:["pet food"], categories:{pet:4.5}, narrow:true},
       {phrases:["green card"], categories:{immigration:4.8}, narrow:true},
+      {phrases:["stay in the country","stay in this country","immigration papers","work permit","work permits","legal status"], categories:{immigration:4.5}, narrow:false},
       {phrases:["public transit","bus route","bus routes"], categories:{transportation:4.5}, narrow:true}
     ]
   }
@@ -231,8 +275,13 @@ function singularCandidate(token, vocabulary) {
   return candidates.find(candidate => vocabulary.has(candidate)) || token;
 }
 
-function conservativelyCorrectToken(token, lexicon, vocabulary) {
+function consonantSkeleton(word) {
+  return word.replace(/[aeiouy]/g, "");
+}
+
+function conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens) {
   if (!token || /^\d+$/.test(token) || lexicon.stopWords.has(token) || vocabulary.has(token)) return token;
+  if (lexicon.protectedWords.has(token) || (lockedTokens && lockedTokens.has(token))) return token;
 
   const singular = singularCandidate(token, vocabulary);
   if (singular !== token) return singular;
@@ -251,6 +300,10 @@ function conservativelyCorrectToken(token, lexicon, vocabulary) {
     if (token.length <= 3 && candidate.length < token.length) return;
     if (Math.abs(candidate.length - token.length) > maxDistance) return;
     const distance = damerauLevenshtein(token, candidate);
+    /* A two-edit change to a three-letter word is only a likely misspelling
+       when the consonants survive (fud→food); otherwise it is usually a
+       different word altogether (die→dog). */
+    if (token.length <= 3 && distance === 2 && consonantSkeleton(token) !== consonantSkeleton(candidate)) return;
     if (distance < bestDistance) {
       best = candidate;
       bestDistance = distance;
@@ -274,12 +327,38 @@ function analyzeSearchQuery(rawQuery, language = "en") {
   const lexicon = SEARCH_LEXICONS[language] || SEARCH_LEXICONS.en;
   const vocabulary = buildSearchVocabulary(lexicon);
   const normalized = normalizeSearchText(rawQuery);
-  const rawTokens = normalized ? normalized.split(" ") : [];
-  const correctedTokens = rawTokens.map(token => conservativelyCorrectToken(token, lexicon, vocabulary));
+
+  /* Crisis phrases first: rewrite each matched span to its canonical text so
+     its words are never fuzzily corrected into an unrelated service. */
+  let crisisText = normalized;
+  const crisisMatches = [];
+  lexicon.crisisPhrases.forEach(rule => {
+    rule.patterns.forEach(pattern => {
+      const global = new RegExp(pattern.source, "g");
+      if (global.test(crisisText)) {
+        crisisText = crisisText.replace(global, ` ${rule.canonical} `);
+        if (!crisisMatches.includes(rule.canonical)) crisisMatches.push(rule.canonical);
+      }
+    });
+  });
+  crisisText = crisisText.replace(/\s+/g, " ").trim();
+
+  /* Words that form a recognised phrase keep their spelling, so phrase
+     context ("stay in the country") wins over single-word correction. */
+  const lockedTokens = new Set();
+  detectPhraseConcepts(crisisText, lexicon).forEach(concept => {
+    concept.phrases.forEach(phrase => {
+      const p = normalizeSearchText(phrase);
+      if (crisisText.includes(p)) p.split(" ").forEach(word => lockedTokens.add(word));
+    });
+  });
+
+  const rawTokens = crisisText ? crisisText.split(" ") : [];
+  const correctedTokens = rawTokens.map(token => conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens));
   const correctedText = correctedTokens.join(" ");
 
   const phraseMap = new Map();
-  [...detectPhraseConcepts(normalized, lexicon), ...detectPhraseConcepts(correctedText, lexicon)]
+  [...detectPhraseConcepts(crisisText, lexicon), ...detectPhraseConcepts(correctedText, lexicon)]
     .forEach(concept => phraseMap.set(concept.phrases[0], concept));
   const phraseConcepts = [...phraseMap.values()];
 
@@ -317,7 +396,8 @@ function analyzeSearchQuery(rawQuery, language = "en") {
     phraseConcepts,
     hasNarrowPhrase: phraseConcepts.some(concept => concept.narrow),
     directOtherQuery,
-    urgentEmergency
+    urgentEmergency,
+    crisisMatches
   };
 }
 
@@ -579,7 +659,7 @@ function showResults(items, title, options = {}) {
     const urgentCard = renderUrgentGuidance(options.urgentEmergency);
     const resultCards = items.length
       ? items.map(renderCard).join("")
-      : `<div class="empty-state"><h3>No results found</h3><p>Try a different word, or <a href="#categories">browse all categories</a>.</p></div>`;
+      : `<div class="empty-state"><h3>No results found</h3><p>Try a different word, or <a href="#categories">browse all categories</a>.</p><p>If you need help right now, see the <a href="#crisis">emergency help lines</a>.</p></div>`;
     grid.innerHTML = urgentCard + resultCards;
 
     const urgentAnnouncement = options.urgentEmergency
