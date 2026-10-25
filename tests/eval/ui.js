@@ -47,7 +47,7 @@ function state() {
   const byName = {};
   G("RESOURCES").forEach(r => { byName[r.name] = r; });
   const cards = [...d.querySelectorAll("#resultsGrid .resource-card")];
-  const urgent = cards.filter(c => c.querySelector("#overdoseEmergencyTitle,#mentalCrisisTitle"));
+  const urgent = cards.filter(c => c.querySelector("#overdoseEmergencyTitle,#mentalCrisisTitle,#generalEmergencyTitle"));
   const resources = cards.filter(c => !urgent.includes(c)).map(c => byName[c.querySelector(".rc-name").textContent]).filter(Boolean);
   const visible = el => el && el.offsetParent !== null && !el.closest(".visually-hidden");
   return {
@@ -202,6 +202,21 @@ ui("crisis", "Back to all clears urgent guidance, query and category", async () 
   if (after.ids.length !== G("RESOURCES").filter(r => r.category === "food").length) f.push("category filter not reset");
   return f;
 }, {sev:"high"});
+
+ui("crisis", "general emergency guidance shows with results, survives a category, clears on reset", async () => {
+  await search("he is not breathing");
+  const f = [];
+  let s = state();
+  if (!s.shown) f.push("results section not shown");
+  if (!s.urgent.includes("generalEmergencyTitle") || !s.urgentFirst) f.push("911 guidance not shown first");
+  await click('.cat-row[data-category="pet"]');
+  s = state();
+  if (!s.urgent.includes("generalEmergencyTitle")) f.push("guidance removed by choosing a category");
+  await clear();
+  if (D().getElementById("generalEmergencyTitle")) f.push("guidance still in the page after Back to all");
+  if (state().input) f.push("query not cleared");
+  return f;
+}, {sev:"critical"});
 
 /* Filters and search combine (decided in review): a category narrows the
    active query; the filter is shown with an all-categories reset. */

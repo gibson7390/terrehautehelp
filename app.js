@@ -69,7 +69,8 @@ const SEARCH_LEXICONS = {
       "for","to","with","in","at","of","on","near","around","from","and","or","but","do","does","did",
       "get","gets","getting","got","have","has","had","there","here","somewhere","anywhere","right","now",
       "today","local","nearby","terre","haute","indiana","vigo","county",
-      "ned","nead","plz","pls"
+      "ned","nead","plz","pls",
+      "not","dont","doesnt","didnt","isnt","arent","wont"
     ]),
 
     /* Ordinary words that typo correction must never rewrite. Each is a real
@@ -112,6 +113,14 @@ const SEARCH_LEXICONS = {
         /\b(?:he|she|they|someone|somebody|my \w+)(?: just)? odd(?= \||$)/,
         /\b(?:od|ods|oded|odd|oding|odding) on (?:fentanyl|fent|heroin|dope|pills|meth|drugs|opioids|oxy|oxys|xanax|percs|percocet|methadone)\b/
       ]},
+      /* Immediate medical emergencies. These receive the site's existing
+         general emergency guidance ("For emergencies, call 911."). They are
+         not assumed to be overdoses, and no intent is inferred from them. */
+      {signal:"emergency", urgent:"emergency", tokens:[], patterns:[
+        /\b(?:not|isnt|is not|wasnt|was not|stopped|has stopped|quit|no longer) breathing\b/,
+        /\b(?:took|take|taken|swallowed|swallow|ate|had) (?:too many|way too many) (?:pills|meds|tablets|capsules)\b/,
+        /\b(?:took|take|taken|swallowed|swallow|ate|drank|had) (?:too much|way too much) (?:medicine|medication|meds)\b/
+      ]},
       {signal:"domestic violence", urgent:null, tokens:["domestic","violence"], patterns:[
         /\b(?:boyfriend|girlfriend|husband|wife|partner|spouse|ex|fiance|dad|father|stepdad|stepfather|mom|mother|he|she|they)(?: keeps| is| always| has been| has| just| will| still)? (?:hit|hits|hitting|beat|beats|beating|choke|chokes|choked|choking|strangled|abuse|abuses|abused|abusing|threaten|threatens|threatened|threatening|hurt|hurts|hurting|kicks|kicked|rapes|raped) (?:me|us|my (?:kids|children|son|daughter|baby))\b(?! up\b(?! against\b))/,
         /\b(?:dont|do not|not|never|no longer|cant|cannot) (?:feel |be |stay )?safe (?:at|in) (?:my )?(?:home|house|apartment|place)\b/,
@@ -136,6 +145,7 @@ const SEARCH_LEXICONS = {
       /\b(?:cut|cuts|cutting|burn|burned|burnt|burning|hurt|hurting) (?:my ?self) (?:while )?(?:shaving|cooking(?: (?:dinner|breakfast|lunch|supper|food))?|chopping (?:onions|vegetables|veggies|wood|food|carrots)|on the (?:stove|oven|grill)|lifting (?:weights|boxes|furniture)|working out|at the gym|at work|by accident)\b/,
       /\baccidentally (?:cut|burned|burnt|hurt) (?:my ?self)\b/,
       /\b(?:kill|killing|killed) (?:my ?self) laughing\b/,
+      /\bbreathing room\b/,
       /\b(?:end|ending|ended) (?:it|things|the relationship|our relationship|my relationship) with (?:my (?:boyfriend|girlfriend|husband|wife|partner|ex|fiance|fiancee|bf|gf)|him|her|them)\b/
     ],
 
@@ -694,8 +704,12 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
+  /* "free" qualifies results only when the person asks for no-cost help;
+     "smoke-free" or "does not have to be free" must not favour listings
+     that mention free things. */
+  const wantsFree = requestsNoCost(rawQuery);
   const meaningfulTokens = [...new Set([...baseTokens, ...synonymTokens].filter(token =>
-    token.length > 1 && !lexicon.stopWords.has(token)
+    token.length > 1 && !lexicon.stopWords.has(token) && (wantsFree || !lexicon.freeWords.has(token))
   ))];
 
   /* Generic words ("classes", "free") do not, on their own, say which
@@ -772,7 +786,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const urgentKinds = new Set(signals.map(rule => rule.urgent).filter(Boolean));
   if (meaningfulTokens.some(token => token === "overdose" || token === "overdosing" || token === "911")) urgentKinds.add("overdose");
   if (meaningfulTokens.some(token => ["panic","suicide","suicidal","selfharm"].includes(token))) urgentKinds.add("mental-crisis");
-  const urgentEmergencies = ["overdose", "mental-crisis"].filter(kind => urgentKinds.has(kind));
+  const urgentEmergencies = ["overdose", "emergency", "mental-crisis"].filter(kind => urgentKinds.has(kind));
 
   const strongTokens = meaningfulTokens.filter(token => !lexicon.weakWords.has(token));
 
@@ -835,7 +849,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     categoryScores,
     needScores,
     broadCategories,
-    wantsFree: requestsNoCost(rawQuery),
+    wantsFree,
     serviceHeads,
     phraseConcepts,
     hasNarrowPhrase: phraseConcepts.some(concept => concept.narrow),
@@ -1073,6 +1087,7 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
    ("opioid" treatment is routine care, not acute overdose response). */
 const EMERGENCY_EVIDENCE = {
   "overdose": ["911", "naloxone", "narcan", "overdose"],
+  "emergency": ["911"],
   "mental-crisis": ["988", "crisis line", "suicide", "mental health crisis", "crisis intervention"]
 };
 
@@ -1101,7 +1116,11 @@ const STAY_CHARGE_WORDS = new Set(["rent","fee","fees","program","resident","res
    count; any other "free", "no cost" or "free of charge" does. */
 function requestsNoCost(rawQuery) {
   let text = normalizeClauseText(rawQuery).replace(NON_COST_FREE, " ").replace(CONSULTATION_FREE, " ");
-  text = text.replace(/\b(?:not|dont|doesnt|does not|do not|didnt|need not|neednt|no need for it to|isnt|is not)(?: [a-z]+){0,4} free\b/g, " ");
+  /* A negation counts only when it governs the cost statement itself:
+     "does not have to be free", "doesnt need it to be free", "isnt free".
+     It never reaches across another verb or request, so "i dont drink and
+     need free sober living" still asks for free help. */
+  text = text.replace(/\b(?:not|dont|doesnt|does not|do not|didnt|did not|isnt|is not|arent|are not|wont|will not|neednt|need not)(?: (?:have|has|need|needs|got|gotta))?(?: it)?(?: to)?(?: be)?(?: (?:totally|completely|necessarily|all))? free\b/g, " ");
   return /\bfree\b|\bno cost\b|\bfree of charge\b/.test(text);
 }
 
@@ -1136,8 +1155,11 @@ function documentedCost(resource, analysis) {
         /* attributive: "free <…> housing" */
         for (let j = i + 1; j <= i + 3 && j < words.length && !COST_PHRASE_STOPS.has(words[j]); j++) if (isHead(words[j])) free = true;
       } else if ((word === "free" && COPULAS.has(before)) || (word === "cost" && before === "no") || (word === "charge" && before === "of" && words[i - 2] === "free")) {
-        /* predicative: "<housing> is free", "<housing> … at no cost" */
-        for (let j = i - 2; j >= i - 6 && j >= 0 && !COST_PHRASE_STOPS.has(words[j]); j--) if (isHead(words[j])) free = true;
+        /* predicative: "<housing> is free", "<housing> is provided at no cost"
+           (the "at" of "at no cost" belongs to the cost phrase, not a boundary) */
+        let start = i - 2;
+        if (word === "cost" && words[start] === "at") start--;
+        for (let j = start; j >= start - 5 && j >= 0 && !COST_PHRASE_STOPS.has(words[j]); j--) if (isHead(words[j])) free = true;
       }
     });
   });
@@ -1171,6 +1193,10 @@ const SEARCH_NEED_STRENGTH = 1.5;
 function searchResources(resources, rawQuery, language = "en") {
   const analysis = analyzeSearchQuery(rawQuery, language, resources);
   if (!analysis.strongTokens.length && !analysis.phraseConcepts.length) {
+    /* An emergency with no other searchable words ("he is not breathing")
+       still shows its guidance with the results, never the "enter a
+       service" prompt. */
+    if (analysis.urgentEmergencies.length) return {status:"ok", results:[], analysis, scored:[]};
     return {status:"empty-meaningful", results:[], analysis, scored:[]};
   }
 
@@ -1369,6 +1395,25 @@ function renderUrgentGuidance(kind) {
       </div>
       <div class="rc-footer"><div class="rc-actions">
         <a href="tel:911" class="rc-btn rc-btn-primary">${SVG.phone} Call 911 now</a>
+      </div></div>
+    </article>`;
+  }
+
+  /* General emergencies reuse the site's existing wording verbatim: the
+     crisis section's "Emergency services" / "Call 911" and the footer's
+     "For emergencies, call 911." No new instructions are added here. */
+  if (kind === "emergency") {
+    return `<article class="resource-card" aria-labelledby="generalEmergencyTitle">
+      <div class="rc-top-bar bar-crisis" aria-hidden="true"></div>
+      <div class="rc-body">
+        <div class="rc-header">
+          <h3 class="rc-name" id="generalEmergencyTitle">Emergency services</h3>
+          <span class="rc-badge badge-crisis">Emergency</span>
+        </div>
+        <p class="rc-desc">For emergencies, call 911.</p>
+      </div>
+      <div class="rc-footer"><div class="rc-actions">
+        <a href="tel:911" class="rc-btn rc-btn-primary">${SVG.phone} Call 911</a>
       </div></div>
     </article>`;
   }

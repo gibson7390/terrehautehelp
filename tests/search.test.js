@@ -5,6 +5,7 @@
 
 const MENTAL = "mental-crisis";
 const OVERDOSE = "overdose";
+const EMERGENCY = "emergency";
 
 function run(query) {
   const search = searchResources(RESOURCES, query, "en");
@@ -53,6 +54,11 @@ const expect = {
     const pa = r.ids.indexOf(a), pb = r.ids.indexOf(b);
     if (pa < 0) return `${a} not returned`;
     return pb < 0 || pa < pb ? null : `${a} at #${pa + 1} is not before ${b} at #${pb + 1}`;
+  },
+  /* Same results in the same order as another query (by resource ID). */
+  sameOrderAs: query => r => {
+    const other = searchResources(RESOURCES, query, "en").results.map(x => x.id);
+    return JSON.stringify(other) === JSON.stringify(r.ids) ? null : `order differs from "${query}": ${r.ids.slice(0, 5).join(" ")} vs ${other.slice(0, 5).join(" ")}`;
   },
   categoryCount: (cat, min) => r => r.categories.filter(c => c === cat).length >= min ? null : `only ${r.categories.filter(c => c === cat).length} ${cat} results, expected at least ${min}`,
   status: s => r => r.status === s ? null : `status ${r.status}, expected ${s}`
@@ -275,6 +281,31 @@ const CASES = [
   }]],
   ["Wabash Valley Health Center", [expect.first("health-007")]],
 
+  /* Fifth review: negation applies only to the cost statement itself
+     (Codex's exact reproduction, beside genuine negations). */
+  ["i dont drink and need free sober living", [
+    expect.first("recovery-012"), expect.before("recovery-012", "recovery-002"), expect.before("recovery-012", "recovery-004")
+  ]],
+  ["free sober living", [expect.first("recovery-012")]],
+  ["sober living does not have to be free", [expect.sameOrderAs("sober living")]],
+  ["housing does not have to be free", [expect.sameOrderAs("housing")]],
+  ["housing doesnt need to be free", [expect.sameOrderAs("housing")]],
+
+  /* Fifth review: immediate emergencies get the site's general emergency
+     guidance (not overdose-specific, no inferred intent)... */
+  ["he is not breathing", [expect.urgentList([EMERGENCY]), expect.status("ok")]],
+  ["she took too many pills", [expect.urgentList([EMERGENCY]), expect.status("ok")]],
+  ["my baby stopped breathing", [expect.urgentList([EMERGENCY])]],
+  ["he isnt breathing", [expect.urgentList([EMERGENCY])]],
+  ["someone overdosed and is not breathing", [expect.urgentList([OVERDOSE, EMERGENCY]), expect.first("crisis-004")]],
+  ["she took too many pills and i want to die", [expect.urgentList([EMERGENCY, MENTAL])]],
+  /* ...and ordinary expressions with the same words do not */
+  ["breathing exercises for stress", [expect.urgent(null)]],
+  ["breathing treatment for asthma", [expect.urgent(null)]],
+  ["too many pills to keep track of", [expect.urgent(null)]],
+  ["i took too many classes", [expect.urgent(null)]],
+  ["not breathing room in my budget", [expect.urgent(null)]],
+
   /* Feeding intent: the object being fed decides the service */
   ["cant afford to feed my dog", [expect.first("pet-001"), expect.before("pet-001", "pet-002"), expect.noCategory("food")]],
   ["cant afford to feed my cat", [expect.first("pet-001"), expect.noCategory("food")]],
@@ -340,7 +371,11 @@ function runSuite() {
     [{name:"Test Sober House", description:"Consultation is free for sober living placement.", requirements:""}, "unknown"],
     [{name:"Test Sober House", description:"Free recovery counseling.", requirements:""}, "unknown"],
     [{name:"Test Sober House", description:"Free recovery counseling plus $100/week housing.", requirements:""}, "paid"],
-    [{name:"Test Sober House", description:"Free housing. Meals cost $10/day.", requirements:""}, "free"]
+    [{name:"Test Sober House", description:"Free housing. Meals cost $10/day.", requirements:""}, "free"],
+    /* Fifth review: "at no cost" without "free" anywhere in the name */
+    [{name:"Sober Living Residence", description:"Housing is provided at no cost.", requirements:""}, "free"],
+    [{name:"Sober Living Residence", description:"Meals are provided at no cost.", requirements:""}, "unknown"],
+    [{name:"Sober Living Residence", description:"Housing is provided at no cost.", requirements:"Rent is $150/week."}, "unknown"]
   ];
   [...costCases, ...codexCostProbes].forEach(([listing, expected]) => {
     let got;
@@ -374,6 +409,17 @@ function runSuite() {
   }));
   rows.push({query:`(fixture order for "free sober living": ${fixtureIds.join(" ")})`, result:{ids:[], urgent:null}, failures: fixtureProblems});
   if (fixtureProblems.length) failed++;
+
+  /* Fifth review: a no-cost fixture whose names never say "free". */
+  const noCostFixture = [
+    {id:"nc-paid", category:"recovery", tags:[], name:"Sober Living Home", description:"Sober living home for adults.", requirements:"Rent is $120/week."},
+    {id:"nc-unknown", category:"recovery", tags:[], name:"Sober Living House", description:"Sober living for adults.", requirements:""},
+    {id:"nc-free", category:"recovery", tags:[], name:"Sober Living Residence", description:"Housing is provided at no cost.", requirements:""}
+  ];
+  const noCostIds = searchResources(noCostFixture, "free sober living", "en").results.map(r => r.id);
+  const noCostOk = JSON.stringify(noCostIds) === JSON.stringify(["nc-free", "nc-unknown", "nc-paid"]);
+  rows.push({query:`(no-cost fixture order for "free sober living": ${noCostIds.join(" ")})`, result:{ids:[], urgent:null}, failures: noCostOk ? [] : ["expected nc-free nc-unknown nc-paid"]});
+  if (!noCostOk) failed++;
 
   /* Search speed: the UI runs searchResources on every query. Budget is
      generous for desktop browsers; slow hardware may need more. */

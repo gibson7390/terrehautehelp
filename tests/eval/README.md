@@ -73,6 +73,17 @@ Order is always asserted by resource ID, never by score values.
 - Once a change is final, run `eval.html?holdout=1` once and record the result in the review.
 - After that, the set has been used: write a fresh holdout set before the next tuning cycle.
 
+## Known retrieval issues (tracked, not missing services)
+
+Cases with a `known` field fail on purpose until the retrieval problem is fixed. The dataset already contains the help; the search does not reach it.
+
+| Query | Expected | Dataset evidence | Current behaviour |
+|---|---|---|---|
+| got arrested need lawyer | legal-002 first | Vigo County Public Defender: "Court-appointed representation for criminal cases." | Ranks 13th; the query's words ("arrested", "lawyer") don't reach "criminal" or "public defender". |
+| get my license back | employment-011 first | Fines & Fees Assistance Program: "Help paying court fines to restore driving privileges." | Not returned; "license" instead matches "licensed daycare providers" (children-008). |
+
+Missing wording in the data (eyeglasses, named treatment medications, current availability, eligibility) does not establish that help is unavailable. Those `gap` cases need data verification, not search changes.
+
 ## Adding cases
 
 1. Read the relevant entries in `resources.js` and write the expectation from the data.

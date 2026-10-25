@@ -240,7 +240,7 @@ async function evalRender() {
     <h2>Failures by defect type and severity</h2>
     ${table(["Defect type","Critical","High","Medium","Low"], TYPE_ORDER.filter(t => byType[t]).map(t => tr([TYPE_LABEL[t], ...SEVERITIES.map(s => byType[t][s])])))}
     <h2>Failures (${fails.length})</h2>
-    ${table(["Severity","Type","Case","Set","Query","Problem","Top 5"], fails.map(r => tr([r.sev, r.type, r.id, r.set, r.query, r.failures.map(x => x.msg).join("; "), r.result.ids.slice(0, 5).join(" ")])))}
+    ${table(["Severity","Type","Case","Set","Query","Problem","Known issue","Top 5"], fails.map(r => tr([r.sev, r.type, r.id, r.set, r.query, r.failures.map(x => x.msg).join("; "), r.known || "", r.result.ids.slice(0, 5).join(" ")])))}
     <h2>Ambiguous expectations and missing data (${flagged.length})</h2>
     ${table(["Outcome","Case","Query","Flag","Observed"], flagged.map(r => tr([r.outcome, r.id, r.query, r.gap || r.review, r.failures.map(x => x.msg).join("; ")])))}
     <h2>Full matrix (${rows.length})</h2>
@@ -250,7 +250,7 @@ async function evalRender() {
 
   document.getElementById("report-json").textContent = JSON.stringify({
     bySet, byGroup, byType, authoringErrors:suite.authoringErrors,
-    failures:fails.map(r => ({sev:r.sev, type:r.type, id:r.id, set:r.set, query:r.query, problems:r.failures.map(x => x.msg), top:r.result.ids.slice(0, 5)})),
+    failures:fails.map(r => ({sev:r.sev, type:r.type, id:r.id, set:r.set, query:r.query, known:r.known || null, problems:r.failures.map(x => x.msg), top:r.result.ids.slice(0, 5)})),
     flagged:flagged.map(r => ({outcome:r.outcome, id:r.id, query:r.query, flag:r.gap || r.review, problems:r.failures.map(x => x.msg)}))
   });
 }

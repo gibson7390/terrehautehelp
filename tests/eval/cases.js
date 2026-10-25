@@ -184,8 +184,10 @@ const EVAL_CASES = (() => {
   ce("crisis", "i want to hurt myself", mental, {review:"pattern list covers 'hurting myself'; 'want to hurt myself' should also match"});
   ce("crisis", "i might do something to myself", mental, {review:"indirect phrasing"});
   ["overdose","someone overdosed","he overdosed","he od","my friend od on fentanyl","she is oding"].forEach(q => ce("crisis", q, od));
-  ce("crisis", "she took too many pills", od, {review:"may be overdose or poisoning; 911 guidance is plausible"});
-  ce("crisis", "he is not breathing", {g:"overdose"}, {gap:"no general medical-emergency guidance exists; only overdose/988 cards"});
+  /* Corrected (fifth review): release-critical, no longer flagged. Both need the site's general emergency
+     guidance ("For emergencies, call 911."); neither is assumed to be an overdose or an intentional act. */
+  ce("crisis", "she took too many pills", {urgentAll:["emergency"], notCat:["pet"]});
+  ce("crisis", "he is not breathing", {urgentAll:["emergency"], notCat:["pet"]});
   ["my boyfriend hits me","my husband beats me","he hits me","i dont feel safe at home","im scared of my husband",
    "abusive relationship","my partner threatens me","he choked me"].forEach(q => ce("crisis", q, dv));
   ce("crisis", "i was raped", {first:"crisis-002", notCat:["pet"]});
@@ -325,7 +327,9 @@ const EVAL_CASES = (() => {
   legal("everyday", "my landlord wont fix anything", {any:["legal-004","legal-001"]});
   legal("everyday", "i have a warrant", {any:["legal-002","legal-008"], an:5}, {gap:"no warrant-specific resource"});
   legal("everyday", "need help with court", {any:["legal-005","legal-008","legal-002","legal-001"]});
-  legal("everyday", "got arrested need lawyer", {first:"legal-002"}, {review:"criminal context implies public defender"});
+  /* Known retrieval/ranking issue (fifth review), not a missing service: legal-002 Vigo County Public Defender
+     offers "Court-appointed representation for criminal cases"; the query's words do not reach it. */
+  legal("everyday", "got arrested need lawyer", {first:"legal-002"}, {known:"retrieval: public defender ranks low for arrest wording"});
   legal("everyday", "they cut off my benefits", {any:["legal-001"], an:5}, {review:"'cut' + 'benefits'; legal aid lists benefits cases"});
   legal("misspell", "lawer", {any:["legal-001","legal-007","legal-009"]});
   legal("misspell", "atorney", {any:["legal-001","legal-007","legal-009"]});
@@ -398,7 +402,9 @@ const EVAL_CASES = (() => {
   emp("service", "bus pass for new job", {first:"employment-006"});
   emp("service", "probation officer", {first:"employment-010"});
   emp("service", "pay court fines", {first:"employment-011"});
-  emp("service", "get my license back", {first:"employment-011"}, {review:"data says 'restore driving privileges'"});
+  /* Known retrieval issue (fifth review), not a missing service: employment-011 Fines & Fees Assistance
+     Program offers "Help paying court fines to restore driving privileges"; "license" does not reach it. */
+  emp("service", "get my license back", {first:"employment-011"}, {known:"retrieval: license restoration wording not matched"});
   emp("service", "replace id after prison", {first:"employment-008"});
   emp("everyday", "i need a job bad", {cats:{in:["employment"], n:3}});
   emp("everyday", "just got out of prison need work", {any:["employment-002","employment-003","employment-012","employment-008"]});
