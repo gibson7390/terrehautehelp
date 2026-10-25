@@ -1,0 +1,4 @@
+app.js sha256 02ed160823871aec37566e95992050d75253349e169cc9be0129d25815d609a3
+run started 2026-10-25T15:02:10.3562889-07:00
+url http://localhost:8765/tests/eval/eval.html?holdout=1
+author-run validation, not independent review
