@@ -218,6 +218,41 @@ ui("crisis", "general emergency guidance shows with results, survives a category
   return f;
 }, {sev:"critical"});
 
+/* Sixth review: what is visible, not just flags. */
+const emptyStateText = () => {
+  const el = D().querySelector("#resultsGrid .empty-state");
+  return el ? el.innerText.replace(/\s+/g, " ").trim() : "";
+};
+const GUIDANCE_EMPTY = "No additional directory listings matched your search.";
+[
+  ["i am not breathing hard after exercise", false],
+  ["he is not breathing heavily anymore", false],
+  ["i did not take too many pills", false],
+  ["i take too many pills to keep track of", false],
+  ["i did not take too many pills. she took too many pills", true],
+  ["she took too many pills, i did not take too many pills", true],
+  ["i am not breathing hard after exercise... he is not breathing", true],
+  ["he is not breathing; i am not breathing hard after exercise", true]
+].forEach(([query, expectGuidance]) => {
+  ui("crisis", `visible guidance for "${query}": ${expectGuidance ? "shown first" : "not shown"}`, async () => {
+    await search(query);
+    const s = state(), f = [];
+    const shown = s.urgent.includes("generalEmergencyTitle");
+    if (expectGuidance && !(shown && s.urgentFirst)) f.push("911 guidance not shown first");
+    if (!expectGuidance && shown) f.push("911 guidance shown for ordinary or denied wording");
+    /* No directory listing describes these situations, so the guidance
+       stands alone with the no-additional-listings message. */
+    if (expectGuidance && s.ids.length) f.push(`unrelated listings shown: ${s.ids.join(" ")}`);
+    if (expectGuidance && emptyStateText() !== GUIDANCE_EMPTY) f.push(`empty state reads "${emptyStateText()}"`);
+    if (expectGuidance && /No results found/.test(emptyStateText())) f.push('"No results found" shown below guidance');
+    return f;
+  }, {sev:"critical", src:"codex3"});
+});
+ui("crisis", "without guidance, an empty search still says No results found", async () => {
+  await search("zxqv blorpt");
+  return /^No results found/.test(emptyStateText()) ? [] : [`empty state reads "${emptyStateText()}"`];
+}, {sev:"low"});
+
 /* Filters and search combine (decided in review): a category narrows the
    active query; the filter is shown with an all-categories reset. */
 const filterState = () => {

@@ -306,6 +306,31 @@ const CASES = [
   ["i took too many classes", [expect.urgent(null)]],
   ["not breathing room in my budget", [expect.urgent(null)]],
 
+  /* Sixth review (Codex's exact reproductions): modifiers and denials
+     belong to their own statement... */
+  ["i am not breathing hard after exercise", [expect.urgent(null)]],
+  ["he is not breathing heavily anymore", [expect.urgent(null)]],
+  ["i did not take too many pills", [expect.urgent(null)]],
+  ["i take too many pills to keep track of", [expect.urgent(null)]],
+  ["i never took too many pills", [expect.urgent(null)]],
+  /* ...and never cancel a separate genuine emergency, in either order,
+     across punctuation and line breaks */
+  /* (No directory listing describes these, so guidance stands alone: the
+     denied or ordinary statement must not pull in unrelated listings.) */
+  ["i am not breathing hard after exercise. he is not breathing", [expect.urgentList([EMERGENCY]), expect.status("ok"), expect.noResults()]],
+  ["he is not breathing, i am not breathing hard after exercise", [expect.urgentList([EMERGENCY]), expect.status("ok"), expect.noResults()]],
+  ["he is not breathing heavily anymore; she took too many pills", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["she took too many pills... he is not breathing heavily anymore", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["i did not take too many pills\nshe took too many pills", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["i did not take too many pills. she took too many pills", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["she took too many pills. i did not take too many pills", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["i take too many pills to keep track of\nhe is not breathing", [expect.urgentList([EMERGENCY])]],
+  ["he is not breathing! i take too many pills to keep track of", [expect.urgentList([EMERGENCY])]],
+  ["he is not breathing\nhard to tell if he has a pulse", [expect.urgentList([EMERGENCY])]],
+
+  /* Restored cost negation */
+  ["sober living no need for it to be free", [expect.sameOrderAs("sober living")]],
+
   /* Feeding intent: the object being fed decides the service */
   ["cant afford to feed my dog", [expect.first("pet-001"), expect.before("pet-001", "pet-002"), expect.noCategory("food")]],
   ["cant afford to feed my cat", [expect.first("pet-001"), expect.noCategory("food")]],
@@ -387,6 +412,7 @@ function runSuite() {
 
   /* Whether the PERSON asks for no-cost help (Codex's exact query probes). */
   [["smoke-free sober living", false], ["drug-free sober living", false], ["housing does not have to be free", false],
+   ["sober living no need for it to be free", false],
    ["free consultation for sober living", false], ["free sober living", true], ["sober living that is free", true],
    ["sober living at no cost", true]].forEach(([query, expected]) => {
     const got = analyzeSearchQuery(query, "en", RESOURCES).wantsFree;

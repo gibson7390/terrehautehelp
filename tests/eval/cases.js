@@ -246,6 +246,10 @@ const EVAL_CASES = (() => {
   look("lookalike", "this homework is killing me", {g:null, not:["crisis-001"], any:["education-008"]}, {src:"codex"});
   look("lookalike", "i want to end it with my boyfriend and start dating other people", {g:null, not:["crisis-001"]}, {src:"codex2"});
   look("lookalike", "i cut myself shaving", {g:null, not:["crisis-001"]}, {src:"codex2"});
+  look("lookalike", "i am not breathing hard after exercise", {urgentAll:[]}, {src:"codex3"});
+  look("lookalike", "he is not breathing heavily anymore", {urgentAll:[]}, {src:"codex3"});
+  look("lookalike", "i did not take too many pills", {urgentAll:[]}, {src:"codex3"});
+  look("lookalike", "i take too many pills to keep track of", {urgentAll:[]}, {src:"codex3"});
   look("lookalike", "killing myself laughing", {g:null, not:["crisis-001"]}, {src:"codex2"});
   look("lookalike", "killing it at my new job", noCrisis);
   look("lookalike", "dying to find a job", {...noCrisis, cats:{in:["employment"], n:2}}, {review:"idiom"});

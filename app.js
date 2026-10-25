@@ -118,8 +118,10 @@ const SEARCH_LEXICONS = {
          not assumed to be overdoses, and no intent is inferred from them. */
       {signal:"emergency", urgent:"emergency", tokens:[], patterns:[
         /\b(?:not|isnt|is not|wasnt|was not|stopped|has stopped|quit|no longer) breathing\b/,
-        /\b(?:took|take|taken|swallowed|swallow|ate|had) (?:too many|way too many) (?:pills|meds|tablets|capsules)\b/,
-        /\b(?:took|take|taken|swallowed|swallow|ate|drank|had) (?:too much|way too much) (?:medicine|medication|meds)\b/
+        /* Past-tense ingestion only: "i take too many pills" describes
+           medication management, not an acute ingestion. */
+        /\b(?:took|taken|swallowed|ate|had) (?:too many|way too many) (?:pills|meds|tablets|capsules)\b/,
+        /\b(?:took|taken|swallowed|ate|drank|had) (?:too much|way too much) (?:medicine|medication|meds)\b/
       ]},
       {signal:"domestic violence", urgent:null, tokens:["domestic","violence"], patterns:[
         /\b(?:boyfriend|girlfriend|husband|wife|partner|spouse|ex|fiance|dad|father|stepdad|stepfather|mom|mother|he|she|they)(?: keeps| is| always| has been| has| just| will| still)? (?:hit|hits|hitting|beat|beats|beating|choke|chokes|choked|choking|strangled|abuse|abuses|abused|abusing|threaten|threatens|threatened|threatening|hurt|hurts|hurting|kicks|kicked|rapes|raped) (?:me|us|my (?:kids|children|son|daughter|baby))\b(?! up\b(?! against\b))/,
@@ -146,6 +148,12 @@ const SEARCH_LEXICONS = {
       /\baccidentally (?:cut|burned|burnt|hurt) (?:my ?self)\b/,
       /\b(?:kill|killing|killed) (?:my ?self) laughing\b/,
       /\bbreathing room\b/,
+      /* "not breathing hard/heavily": breathing, just not hard. Only this
+         clause is excluded; "he is not breathing" elsewhere still counts. */
+      /\b(?:not|isnt|is not|wasnt|was not) breathing (?:so |as |too |very )?(?:hard|heavily|heavy|fast|quickly|rapidly|deeply|loudly)(?: (?:anymore|after (?:exercise|exercising|working out|a workout|running|the gym)))?\b/,
+      /* A denial of the ingestion itself ("i did not take too many pills",
+         "i never took too many pills"). */
+      /\b(?:did not|didnt|never|have not|havent|has not|hasnt|had not|hadnt) (?:take|took|taken|swallow|swallowed|eat|ate|eaten|drink|drank|have|had) (?:too many|way too many|too much|way too much) (?:pills|meds|tablets|capsules|medicine|medication)\b/,
       /\b(?:end|ending|ended) (?:it|things|the relationship|our relationship|my relationship) with (?:my (?:boyfriend|girlfriend|husband|wife|partner|ex|fiance|fiancee|bf|gf)|him|her|them)\b/
     ],
 
@@ -640,6 +648,10 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     }
   });
   const crisisText = clause.map((word, i) => (i && breaks[i] === "hard" ? "| " : "") + (masked.has(i) ? "|" : word)).join(" ");
+  /* Words of a benign or denied statement ("i did not take too many
+     pills") are not search terms either, or "take" finds "take-home
+     boxes"; only service words among them keep their meaning. */
+  const benignWords = new Set([...masked].map(i => clause[i]));
   lexicon.crisisPhrases.forEach(rule => {
     rule.patterns.forEach(pattern => {
       const global = new RegExp(pattern.source, "g");
@@ -699,8 +711,10 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      signal ("children" in "he hits my children"); the rest ("safe", "home",
      "myself") would otherwise match unrelated listings such as In-Home Care. */
   const isServiceTerm = token => Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
+  const negatedCost = negatedCostWordIndexes(normalized);
   const baseTokens = [
-    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && (!crisisSpanWords.has(token) || isServiceTerm(token)) && !situationalWords.has(token)),
+    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) &&
+      (!(crisisSpanWords.has(token) || benignWords.has(token)) || isServiceTerm(token)) && !situationalWords.has(token)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
@@ -1114,14 +1128,30 @@ const STAY_CHARGE_WORDS = new Set(["rent","fee","fees","program","resident","res
 /* Whether the PERSON asks for no-cost help. "smoke-free", "drug-free",
    a free consultation, and negations ("does not have to be free") do not
    count; any other "free", "no cost" or "free of charge" does. */
+/* A negation counts only when it governs the cost statement itself:
+   "does not have to be free", "no need for it to be free", "isnt free".
+   It never reaches across another verb or request, so "i dont drink and
+   need free sober living" still asks for free help. */
+const NEGATED_COST_STATEMENT = /\b(?:not|dont|doesnt|does not|do not|didnt|did not|isnt|is not|arent|are not|wont|will not|neednt|need not|no need for (?:it|that|this))(?: (?:have|has|need|needs|got|gotta))?(?: it)?(?: to)?(?: be)?(?: (?:totally|completely|necessarily|all))? free\b/g;
+
 function requestsNoCost(rawQuery) {
   let text = normalizeClauseText(rawQuery).replace(NON_COST_FREE, " ").replace(CONSULTATION_FREE, " ");
-  /* A negation counts only when it governs the cost statement itself:
-     "does not have to be free", "doesnt need it to be free", "isnt free".
-     It never reaches across another verb or request, so "i dont drink and
-     need free sober living" still asks for free help. */
-  text = text.replace(/\b(?:not|dont|doesnt|does not|do not|didnt|did not|isnt|is not|arent|are not|wont|will not|neednt|need not)(?: (?:have|has|need|needs|got|gotta))?(?: it)?(?: to)?(?: be)?(?: (?:totally|completely|necessarily|all))? free\b/g, " ");
+  text = text.replace(NEGATED_COST_STATEMENT, " ");
   return /\bfree\b|\bno cost\b|\bfree of charge\b/.test(text);
+}
+
+/* Positions (word indexes in normalized text) of negated cost statements,
+   so exactly those words — and no other "no" or "need" — are not searched. */
+function negatedCostWordIndexes(normalized) {
+  const indexes = new Set();
+  const pattern = new RegExp(NEGATED_COST_STATEMENT.source, "g");
+  let match;
+  while ((match = pattern.exec(normalized))) {
+    const start = (normalized.slice(0, match.index).match(/[a-z0-9]+/g) || []).length;
+    const length = (match[0].match(/[a-z0-9]+/g) || []).length;
+    for (let i = start; i < start + length; i++) indexes.add(i);
+  }
+  return indexes;
 }
 
 /* Documented cost of the REQUESTED service, clause by clause:
@@ -1439,7 +1469,8 @@ function renderUrgentGuidance(kind) {
 }
 
 const SEARCH_GUIDANCE_TEXT = "Try entering the service you need, for example food, shelter, doctor, rent, job, recovery, or transportation.";
-const EMERGENCY_LINK_HTML = `<p>If you need help right now, see the <a href="#crisis">emergency help lines</a>.</p>`;
+const GUIDANCE_NO_LISTINGS_TEXT = "No additional directory listings matched your search.";
+const EMERGENCY_LINK_HTML =`<p>If you need help right now, see the <a href="#crisis">emergency help lines</a>.</p>`;
 
 /* Search state. A category narrows the active query rather than replacing
    it, urgent guidance follows the query whatever category is chosen, and
@@ -1504,6 +1535,12 @@ function showResults(items, title, options = {}) {
       resultCards = `<div class="empty-state"><h3>Tell us what you need</h3><p>${esc(SEARCH_GUIDANCE_TEXT)}</p>${EMERGENCY_LINK_HTML}</div>`;
     } else if (items.length) {
       resultCards = items.map(renderCard).join("");
+    } else if (urgentKinds.length) {
+      /* Guidance is shown above; "No results found" would read as if no
+         help were available. */
+      const filterHint = options.filterLabel
+        ? `<p>No ${esc(options.filterLabel)} resources match this search. Choose “Show all categories” above, or try a different word.</p>` : "";
+      resultCards = `<div class="empty-state"><h3>${GUIDANCE_NO_LISTINGS_TEXT}</h3>${filterHint}</div>`;
     } else if (options.filterLabel) {
       resultCards = `<div class="empty-state"><h3>No results found</h3><p>No ${esc(options.filterLabel)} resources match this search. Choose “Show all categories” above, or try a different word.</p>${EMERGENCY_LINK_HTML}</div>`;
     } else {
@@ -1515,7 +1552,9 @@ function showResults(items, title, options = {}) {
       ? " Immediate crisis guidance is shown first."
       : "";
     const filterAnnouncement = options.filterLabel ? ` in ${options.filterLabel}` : "";
-    announce(options.guidance ? SEARCH_GUIDANCE_TEXT : `${countText} for ${title}${filterAnnouncement}.${urgentAnnouncement}`);
+    if (options.guidance) announce(SEARCH_GUIDANCE_TEXT);
+    else if (urgentKinds.length && !items.length) announce(`Immediate crisis guidance is shown for ${title}${filterAnnouncement}. ${GUIDANCE_NO_LISTINGS_TEXT}`);
+    else announce(`${countText} for ${title}${filterAnnouncement}.${urgentAnnouncement}`);
 
     /* A11Y (2.3.3): honour reduced-motion for programmatic scrolling.
        Focus is deliberately NOT moved here — the status region carries the
