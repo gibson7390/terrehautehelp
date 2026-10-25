@@ -22,11 +22,25 @@ async function loadSite() {
 async function act(fn) {
   const status = D().getElementById("resultsStatus");
   status.textContent = "";
+  const started = performance.now();
   fn();
   for (let i = 0; i < 160 && !status.textContent; i++) await pause(50);
-  if (!status.textContent) throw new Error("timed out waiting for the page to update");
+  if (!status.textContent) {
+    /* Diagnose before failing: where the frame sits in the viewport, and
+       whether the frame's requestAnimationFrame fires at all (the page
+       renders results inside it). */
+    const rect = frame.getBoundingClientRect();
+    const frameFired = await new Promise(resolve => {
+      let done = false;
+      W().requestAnimationFrame(() => { if (!done) { done = true; resolve(true); } });
+      setTimeout(() => { if (!done) { done = true; resolve(false); } }, 2000);
+    });
+    throw new Error(`timed out waiting for the page to update (frame top ${Math.round(rect.top)}, bottom ${Math.round(rect.bottom)}, viewport ${innerHeight}; frame rAF ${frameFired ? "fires" : "did not fire within 2s"}; visibility ${D().visibilityState})`);
+  }
+  actTimings.push(Math.round(performance.now() - started));
   await pause(300);
 }
+const actTimings = [];
 
 function state() {
   const d = D(), sec = d.getElementById("resultsSection");
@@ -248,7 +262,15 @@ ui("filter+search", "choosing another category replaces the active category", as
 
 async function runUi() {
   const rows = [];
-  for (const c of UI_CASES) {
+  /* ?only=<text> runs only the checks whose name contains <text>; ?repeat=N
+     runs them N times (for investigating intermittent failures). */
+  const params = new URLSearchParams(location.search);
+  const only = params.get("only");
+  const repeat = Math.max(1, Math.min(20, Number(params.get("repeat")) || 1));
+  const selected = UI_CASES.filter(c => !only || c.name.includes(only));
+  const cases = Array.from({length:repeat}, () => selected).flat();
+  for (const c of cases) {
+    actTimings.length = 0;
     /* Harness timeouts (not assertion failures) are retried up to twice:
        headless browsers can stall the page's requestAnimationFrame. */
     let failures, errored, attempts = 0;
@@ -259,7 +281,7 @@ async function runUi() {
       try { failures = await c.run(); } catch (err) { failures = [`harness error: ${err.message}`]; errored = true; }
     } while (errored && attempts < 3);
     const outcome = errored ? "error" : !failures.length ? "pass" : c.review ? "ambiguous" : "fail";
-    rows.push({group:c.group, kind:c.kind, name:c.name, sev:c.sev, review:c.review, failures, outcome, attempts});
+    rows.push({group:c.group, kind:c.kind, name:c.name, sev:c.sev, review:c.review, failures, outcome, attempts, actTimings:[...actTimings]});
   }
   const t = {total:rows.length, pass:0, fail:0, ambiguous:0, error:0};
   rows.forEach(r => t[r.outcome]++);

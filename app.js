@@ -41,6 +41,19 @@ const CATEGORY_META = {
   other:         {label:"Other Resources",    icon:SVG.other,         badge:"badge-other",         bar:"bar-other"},
 };
 
+/* "feed <whose> <who>" phrases. What is being fed decides the service:
+   animals → pet food; people → food assistance. */
+const FEEDING_PHRASES = (() => {
+  const verbs = ["feed", "feeding"];
+  const whose = ["my", "our", "the", "his", "her"];
+  const combine = nouns => verbs.flatMap(verb => whose.flatMap(owner => nouns.map(noun => `${verb} ${owner} ${noun}`)));
+  return {
+    animals: combine(["dog","dogs","cat","cats","pet","pets","puppy","puppies","kitten","kittens"]),
+    people: [...combine(["kids","kid","children","child","family","baby","babies","son","daughter"]),
+      "feed us", "feed myself", "feed ourselves", "feeding us", "feeding myself"]
+  };
+})();
+
 /* ══ SEARCH 2.1 — deterministic intent-aware local search ══
    Search must tolerate conversational, fragmented and mildly misspelled input
    without sending queries anywhere. The lexicon is deliberately structured by
@@ -291,6 +304,11 @@ const SEARCH_LEXICONS = {
       {phrases:["child care","head start"], categories:{children:4.2,education:1.5}, narrow:true},
       {phrases:["older adult","older adults"], categories:{senior:4.2}, narrow:true},
       {phrases:["pet food","dog food","cat food"], categories:{pet:4.5}, narrow:true},
+      /* "serviceTerms": what a listing must say to offer this service, when
+         the person's own words ("feed my dog") never appear in listings. */
+      {phrases:FEEDING_PHRASES.animals, serviceTerms:["pet food"], categories:{pet:4.5}, narrow:true, situational:true},
+      {phrases:FEEDING_PHRASES.people, serviceTerms:["food pantry","food pantries","food assistance","hot meals","free meals"],
+       categories:{food:4.5}, narrow:false, situational:true},
       {phrases:["green card"], categories:{immigration:4.8}, narrow:true, situational:true},
       {phrases:["stay in the country","stay in this country","immigration papers","work permit","work permits","legal status"], categories:{immigration:4.5}, narrow:false, situational:true},
       {phrases:["public transit","bus route","bus routes"], categories:{transportation:4.5}, narrow:true}
@@ -322,6 +340,29 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+/* Words of the query with the kind of break before each one: "hard" for
+   sentence and clause punctuation (. ! ? ; : ,), "soft" for pauses that do
+   not end a thought (ellipses, line breaks, dashes), null for none. */
+function clauseWords(value) {
+  const text = String(value == null ? "" : value)
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/&/g, " and ");
+  const words = [];
+  const breaks = [];
+  let pending = null;
+  const pattern = /([a-z0-9]+)|(\.{2,}|…|\r\n|\r|\n|[—–])|([.!?;:,])/g;
+  let match;
+  while ((match = pattern.exec(text))) {
+    if (match[1]) { words.push(match[1]); breaks.push(pending); pending = null; }
+    else if (match[2]) { if (pending !== "hard") pending = "soft"; }
+    else pending = "hard";
+  }
+  return {words, breaks};
+}
+
 /* Like normalizeSearchText, but clause punctuation (. ! ? ; : , dashes and
    line breaks) becomes a "|" boundary. Crisis and benign patterns join words
    with single spaces, so no match can cross a boundary. */
@@ -350,7 +391,10 @@ function buildSearchVocabulary(lexicon) {
   Object.values(lexicon.categoryTerms).forEach(termMap => {
     Object.keys(termMap).forEach(term => words.add(term));
   });
-  lexicon.phraseConcepts.forEach(concept => {
+  /* Concepts with serviceTerms are generated phrasings of how people ask
+     ("feed my dog"); their words ("feed") are not spelling targets, or
+     "fud" would tie between food and feed. */
+  lexicon.phraseConcepts.filter(concept => !concept.serviceTerms).forEach(concept => {
     concept.phrases.forEach(phrase => {
       normalizeSearchText(phrase).split(" ").forEach(word => words.add(word));
     });
@@ -566,13 +610,26 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const signals = [];
   const lockedTokens = new Set();
   const crisisSpanWords = new Set();
-  /* Crisis matching runs on the clause-preserving form of the query. Complete
-     benign contexts are masked with boundary characters of the same length,
-     so word boundaries elsewhere are unaffected. */
-  const crisisText = lexicon.benignContexts.reduce(
-    (text, pattern) => text.replace(new RegExp(pattern.source, "g"), span => "|".repeat(span.length)),
-    normalizeClauseText(rawQuery)
-  );
+  /* Two views of the query's clauses. Benign contexts are matched where
+     EVERY break (including ellipses and line breaks) ends the match, so an
+     ordinary phrase can never absorb words from a neighbouring thought.
+     Genuine crisis phrases are matched where only sentence punctuation ends
+     the match, so "i want to...die" and "he<line break>od" still count.
+     Each benign match masks exactly its own words in the crisis view. */
+  const {words: clause, breaks} = clauseWords(rawQuery);
+  const strictText = clause.map((word, i) => (i && breaks[i] ? "| " : "") + word).join(" ");
+  const masked = new Set();
+  lexicon.benignContexts.forEach(pattern => {
+    const global = new RegExp(pattern.source, "g");
+    let match;
+    while ((match = global.exec(strictText))) {
+      const start = (strictText.slice(0, match.index).match(/[a-z0-9]+/g) || []).length;
+      const length = (match[0].match(/[a-z0-9]+/g) || []).length;
+      for (let i = start; i < start + length; i++) masked.add(i);
+      if (!match[0]) global.lastIndex++;
+    }
+  });
+  const crisisText = clause.map((word, i) => (i && breaks[i] === "hard" ? "| " : "") + (masked.has(i) ? "|" : word)).join(" ");
   lexicon.crisisPhrases.forEach(rule => {
     rule.patterns.forEach(pattern => {
       const global = new RegExp(pattern.source, "g");
@@ -719,21 +776,27 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
 
   const strongTokens = meaningfulTokens.filter(token => !lexicon.weakWords.has(token));
 
-  /* Words naming the requested service, for judging whether a listing's
-     "free" applies to it: the words asked for, their concepts' words, and
-     the broad words of each requested category. */
-  const requestedWords = new Set(strongTokens.filter(token => !qualifierTokens.includes(token)).flatMap(token => [token, stemSearchWord(token)]));
-  phraseConcepts.forEach(concept => concept.phrases.forEach(phrase => normalizeSearchText(phrase).split(" ").forEach(word => requestedWords.add(word))));
-  Object.entries(needScores).filter(([, strength]) => strength >= SEARCH_NEED_STRENGTH)
-    .forEach(([category]) => (lexicon.broadTerms[category] || []).forEach(word => requestedWords.add(word)));
+  /* The particular service requested, as head words: the words asked for
+     and the final word of each matched service phrase ("living", "house",
+     "housing" for sober living). Broad category words ("recovery") are not
+     heads, so "free recovery counseling" says nothing about housing. */
+  const serviceHeads = new Set(strongTokens.filter(token => !qualifierTokens.includes(token)).flatMap(token => [token, stemSearchWord(token)]));
+  phraseConcepts.forEach(concept => concept.phrases.forEach(phrase => {
+    const words = normalizeSearchText(phrase).split(" ");
+    serviceHeads.add(words[words.length - 1]);
+  }));
+  const requestedWords = serviceHeads;
 
   /* Multi-word runs of the query containing a distinctive word (not a stop
      word, service term or generic word): candidate organization names such
      as "hamilton center" or "mental health america", longest first. Service
      phrases from the lexicon ("food pantry") are not organizations. */
   const conceptPhrases = new Set(lexicon.phraseConcepts.flatMap(concept => concept.phrases.map(normalizeSearchText)));
+  /* A distinctive word is not part of the search lexicon at all (service
+     terms and service-phrase words such as "sober", "living", "house" are
+     descriptions, not names). */
   const distinctive = word => word.length > 1 && !/^\d+$/.test(word) && !lexicon.stopWords.has(word) &&
-    !isServiceTerm(word) && !lexicon.weakWords.has(word) &&
+    !isServiceTerm(word) && !lexicon.weakWords.has(word) && !vocabulary.has(word) && word !== "free" &&
     (frequency.get(word) || 0) > 0 && frequency.get(word) <= SEARCH_ORGANIZATION_WORD_LISTINGS;
   const organizationPhrases = [];
   for (let n = rawTokens.length; n >= 2; n--) {
@@ -772,7 +835,8 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     categoryScores,
     needScores,
     broadCategories,
-    wantsFree: rawTokens.some(token => lexicon.freeWords.has(token)) || containsPhrase(normalized, "no cost"),
+    wantsFree: requestsNoCost(rawQuery),
+    serviceHeads,
     phraseConcepts,
     hasNarrowPhrase: phraseConcepts.some(concept => concept.narrow),
     directOtherQuery,
@@ -819,8 +883,21 @@ function buildResourceFields(resource) {
   return fields;
 }
 
+/* Service phrases a listing's own name or tags contain, with their words.
+   Fixed per listing, so computed once and cached with its fields. */
+function conceptPhrasesInNameAndTags(resource, fields, lexicon) {
+  if (!fields.conceptPhrases) {
+    fields.conceptPhrases = [];
+    lexicon.phraseConcepts.forEach(concept => concept.phrases.forEach(phrase => {
+      const p = normalizedPhrase(phrase);
+      if (containsPhrase(fields.nameAndTags, p)) fields.conceptPhrases.push({concept, words:p.split(" ")});
+    }));
+  }
+  return fields.conceptPhrases;
+}
+
 function resourceContainsConcept(fields, concept) {
-  return concept.phrases.some(phrase => {
+  return [...concept.phrases, ...(concept.serviceTerms || [])].some(phrase => {
     const p = normalizedPhrase(phrase);
     return containsPhrase(fields.name, p) || containsPhrase(fields.tags, p) || containsPhrase(fields.description, p) || containsPhrase(fields.requirements, p);
   });
@@ -864,14 +941,18 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
      overlaps the query ("Pet Food Pantry" for "food pantry", "homeless
      students" for "homeless") offers that other service, not this one. */
   const intended = Object.keys(analysis.categoryScores);
-  const nameAndTags = fields.nameAndTags;
-  const otherService = lexicon.phraseConcepts.some(concept =>
-    !intended.some(category => concept.categories[category]) &&
-    concept.phrases.some(phrase => {
-      const p = normalizedPhrase(phrase);
-      return containsPhrase(nameAndTags, p) && p.split(" ").some(word => analysis.tokens.includes(word));
-    })
-  );
+  /* Words of the request: those typed, plus the service words of detected
+     concepts ("food pantry" for "feed my kids"). Computed once per search. */
+  if (!analysis.requestWords) {
+    analysis.requestWords = new Set([...analysis.tokens,
+      ...analysis.phraseConcepts.flatMap(concept => (concept.serviceTerms || []).flatMap(term => normalizedPhrase(term).split(" ")))]);
+  }
+  const requestWords = analysis.requestWords;
+  /* Only a listing outside the requested categories can be "another
+     service"; Pet Food Pantry is the right answer for "feed my dog". */
+  const otherService = !analysis.categoryScores[resource.category] &&
+    conceptPhrasesInNameAndTags(resource, fields, lexicon).some(({concept, words}) =>
+      !intended.some(category => concept.categories[category]) && words.some(word => requestWords.has(word)));
 
   let weakScore = 0;
   /* A rare, non-category word this listing names ("welding", "breakfast"):
@@ -922,14 +1003,17 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
   let conceptHit = false;
   let narrowConceptHit = false;
   analysis.phraseConcepts.forEach(concept => {
-    if (!resourceContainsConcept(fields, concept)) return;
+    /* A listing for another service ("Pet Food Pantry") does not offer the
+       requested concept even when its words overlap ("food pantry"). */
+    if (otherService || !resourceContainsConcept(fields, concept)) return;
     conceptHit = true;
     if (concept.narrow && !otherService) narrowConceptHit = true;
     if (!otherService) specific = true;
     Object.keys(concept.categories).forEach(category => coveredNeeds.add(category));
-    if (concept.phrases.some(p => fields.name.includes(normalizedPhrase(p)))) score += 38;
-    else if (concept.phrases.some(p => fields.tags.includes(normalizedPhrase(p)))) score += 32;
-    else if (concept.phrases.some(p => fields.description.includes(normalizedPhrase(p)))) score += 22;
+    const phrases = [...concept.phrases, ...(concept.serviceTerms || [])];
+    if (phrases.some(p => fields.name.includes(normalizedPhrase(p)))) score += 38;
+    else if (phrases.some(p => fields.tags.includes(normalizedPhrase(p)))) score += 32;
+    else if (phrases.some(p => fields.description.includes(normalizedPhrase(p)))) score += 22;
     else score += 8;
   });
 
@@ -997,47 +1081,86 @@ function emergencyEvidence(resource, kind) {
   return (EMERGENCY_EVIDENCE[kind] || []).some(term => containsPhrase(text, term));
 }
 
-/* Documented cost of the REQUESTED service, decided conservatively:
-   - "free" counts only when it applies to a word naming that service, within
-     the same clause ("Free housing" for sober living, not "free meals");
-   - "smoke-free", "drug-free" and similar are not about price;
-   - a free consultation, assessment or screening says nothing about the
-     service's own cost;
-   - "not free" and explicit charges ("$100/week", "pay equal share",
-     self-pay) are paid evidence; a dollar figure alone is not
-     ("Income under $60k" is a limit);
-   - fare-free, tuition-free and free-of-charge describe the whole offer.
-   Free and paid together, or neither, is unknown — never shown or treated
-   as free. */
+/* "free" that is not about price, or that prices something other than the
+   service itself. Shared by the query and listing checks. */
 const NON_COST_FREE = /\b(?:smoke|drug|alcohol|tobacco|nicotine|sugar|gluten|nut|scent|fragrance|latex|crime|violence|stress|worry|hands|barrier) free\b/g;
 const CONSULTATION_FREE = /\bfree (?:initial |first )?(?:consultation|consultations|assessment|assessments|screening|screenings|evaluation|evaluations|estimate|estimates|quote|quotes|referral|referrals)\b/g;
-const NEGATED_FREE = /\b(?:not|isnt|is not|arent|are not|no longer|never) free\b/;
-const WHOLE_OFFER_FREE = /\b(?:tuition free|fare free|cost free|fee free|free of charge)\b/;
 const EXPLICIT_CHARGE = /\$\s?\d[\d.,]*\s*(?:\/|per\s)\s*(?:week|wk|month|mo|day|night)\b|\bcosts? \$\s?\d|\brent (?:is|of) \$\s?\d|\bpay equal share\b|\bself-pay\b|\bcash and credit\b/;
+/* Words that end the phrase "free" modifies ("free meals AND transportation",
+   "free FOR sober living placement"). */
+const COST_PHRASE_STOPS = new Set(["for","to","with","and","or","but","of","in","at","on","by","from","plus","as","if","when","while"]);
+const COPULAS = new Set(["is","are","be","was","were","its","being"]);
+/* Things a listing may charge for besides the requested service. */
+const OTHER_PRICED_ITEMS = new Set(["meal","meals","food","counseling","consultation","consultations","assessment","laundry",
+  "transportation","ride","rides","class","classes","testing","test","parking","membership","copies","printing"]);
+/* Words that make a charge clearly about the stay or program itself. */
+const STAY_CHARGE_WORDS = new Set(["rent","fee","fees","program","resident","residents","stay","weekly","monthly","expenses"]);
 
+/* Whether the PERSON asks for no-cost help. "smoke-free", "drug-free",
+   a free consultation, and negations ("does not have to be free") do not
+   count; any other "free", "no cost" or "free of charge" does. */
+function requestsNoCost(rawQuery) {
+  let text = normalizeClauseText(rawQuery).replace(NON_COST_FREE, " ").replace(CONSULTATION_FREE, " ");
+  text = text.replace(/\b(?:not|dont|doesnt|does not|do not|didnt|need not|neednt|no need for it to|isnt|is not)(?: [a-z]+){0,4} free\b/g, " ");
+  return /\bfree\b|\bno cost\b|\bfree of charge\b/.test(text);
+}
+
+/* Documented cost of the REQUESTED service, clause by clause:
+   - Free evidence: "free" directly before a head word of the requested
+     service ("Free housing"; the phrase ends at for/and/with…), or "<head>
+     is free" / "<head> … at no cost". "No free housing" is not free.
+     Fare-free, tuition-free and free-of-charge describe the whole offer.
+   - Paid evidence: an explicit charge ("$100/week", "rent is $120", "pay
+     equal share", self-pay) in a clause about the service or the stay, or
+     "not free" with no other subject. A charge for something else ("Meals
+     cost $10/day") is not about the service. A dollar figure alone is not a
+     charge ("Income under $60k" is a limit).
+   Free and paid together, or neither, is unknown — never treated as free. */
 function documentedCost(resource, analysis) {
-  const requested = (analysis && analysis.requestedWords) || new Set();
-  const clauses = text => normalizeClauseText(text).replace(NON_COST_FREE, " ").replace(CONSULTATION_FREE, " ");
-  let offer = clauses(`${resource.name || ""} | ${(resource.tags || []).join(" | ")} | ${resource.description || ""}`);
-  const terms = clauses(`${resource.description || ""} | ${resource.requirements || ""}`);
+  const heads = (analysis && (analysis.serviceHeads || analysis.requestedWords)) || new Set();
+  const isHead = word => heads.has(word) || heads.has(stemSearchWord(word));
+  const clean = text => normalizeClauseText(text).replace(NON_COST_FREE, " ").replace(CONSULTATION_FREE, " ")
+    .replace(/\s+/g, " ").split(" | ").map(clause => clause.trim().split(" ").filter(Boolean));
 
-  let paid = EXPLICIT_CHARGE.test(`${resource.description || ""} ${resource.requirements || ""}`.toLowerCase());
-  if (NEGATED_FREE.test(offer) || NEGATED_FREE.test(terms)) paid = true;
-  offer = offer.replace(new RegExp(NEGATED_FREE.source, "g"), " ");
+  let free = false;
+  let paid = false;
+  const offerClauses = clean(`${resource.name || ""} | ${(resource.tags || []).join(" | ")} | ${resource.description || ""}`);
+  const termClauses = clean(`${resource.description || ""} | ${resource.requirements || ""}`);
 
-  const names = word => requested.has(word) || requested.has(stemSearchWord(word));
-  let free = WHOLE_OFFER_FREE.test(offer);
-  const words = offer.split(" ");
-  words.forEach((word, i) => {
-    if (free) return;
-    if (word === "free") {
-      /* the service word follows within three words, same clause */
-      for (let j = i + 1; j <= i + 3 && j < words.length && words[j] !== "|"; j++) if (names(words[j])) free = true;
-    } else if (word === "cost" && words[i - 1] === "no") {
-      /* "<service> ... at no cost": the service word precedes, same clause */
-      for (let j = i - 2; j >= i - 6 && j >= 0 && words[j] !== "|"; j--) if (names(words[j])) free = true;
+  offerClauses.forEach(words => {
+    const text = words.join(" ");
+    if (/\b(?:tuition free|fare free|cost free|fee free)\b/.test(text)) free = true;
+    words.forEach((word, i) => {
+      const before = words[i - 1];
+      if (word === "free" && !["no","not","never","isnt","arent"].includes(before) && !COPULAS.has(before)) {
+        /* attributive: "free <…> housing" */
+        for (let j = i + 1; j <= i + 3 && j < words.length && !COST_PHRASE_STOPS.has(words[j]); j++) if (isHead(words[j])) free = true;
+      } else if ((word === "free" && COPULAS.has(before)) || (word === "cost" && before === "no") || (word === "charge" && before === "of" && words[i - 2] === "free")) {
+        /* predicative: "<housing> is free", "<housing> … at no cost" */
+        for (let j = i - 2; j >= i - 6 && j >= 0 && !COST_PHRASE_STOPS.has(words[j]); j--) if (isHead(words[j])) free = true;
+      }
+    });
+  });
+
+  termClauses.forEach(words => {
+    const text = words.join(" ");
+    /* "not free" with no other subject in the clause ("Not free; residents share expenses") */
+    const negated = /\b(?:not|isnt|arent|no longer|never) free\b/.exec(text);
+    if (negated) {
+      const subject = words.slice(0, words.indexOf("free")).filter(word => !["not","isnt","arent","no","longer","never","is","are","it","its","this","the","a"].includes(word));
+      if (!subject.length || subject.some(isHead)) paid = true;
     }
   });
+
+  /* Explicit charges, per clause of the original text (keeps "$" and "/"). */
+  `${resource.description || ""}\n${resource.requirements || ""}`.toLowerCase()
+    .split(/[!?;\n]+|\.(?=\s|$)/).forEach(raw => {
+      if (!EXPLICIT_CHARGE.test(raw)) return;
+      const words = normalizeSearchText(raw).split(" ");
+      if (words.some(word => isHead(word) || STAY_CHARGE_WORDS.has(word))) paid = true;
+      else if (!words.some(word => OTHER_PRICED_ITEMS.has(word))) paid = true;
+    });
+
   return free && !paid ? "free" : paid && !free ? "paid" : "unknown";
 }
 

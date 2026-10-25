@@ -228,6 +228,26 @@ const CASES = [
   ["cutting myself a piece of cake, then cutting myself a piece of pie", [expect.urgent(null), expect.absent("crisis-001")]],
   ["i want to end it with my boyfriend.", [expect.urgent(null), expect.absent("crisis-001")]],
 
+  /* Fourth review: genuine crisis phrases span ellipses and line breaks
+     (Codex's exact reproductions)... */
+  ["i want to...die", mentalCrisis],
+  ["i want to\ndie", mentalCrisis],
+  ["i want to kill...myself", mentalCrisis],
+  ["i am cutting...myself", mentalCrisis],
+  ["he\nod", overdose],
+  ["i want to…die", mentalCrisis],
+  ["i want to\r\ndie", mentalCrisis],
+  /* ...while benign exclusions still stop at those same breaks, in both orders */
+  ["I cut myself shaving...i want to\ndie", mentalCrisis],
+  ["i want to...die. I cut myself shaving", mentalCrisis],
+  ["I burned myself cooking\nI want to kill...myself", mentalCrisis],
+  ["I want to kill...myself\nI burned myself cooking", mentalCrisis],
+  ["I cut myself...a piece of cake", mentalCrisis],
+  ["I cut myself\na piece of me wants to die", mentalCrisis],
+  ["I cut myself shaving...", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i burned myself cooking dinner\n", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["cutting myself a piece of cake... cutting myself a piece of pie", [expect.urgent(null), expect.absent("crisis-001")]],
+
   /* "opioid" alone is not acute-emergency evidence; cost never outranks acute help */
   ["someone overdosed and need food pantry", [
     expect.urgent(OVERDOSE), expect.first("crisis-004"), expect.notAheadOfCategory("recovery-014", "food")
@@ -254,6 +274,16 @@ const CASES = [
     return off.length ? `non-Hamilton listings in top 5: ${off.join(" ")}` : null;
   }]],
   ["Wabash Valley Health Center", [expect.first("health-007")]],
+
+  /* Feeding intent: the object being fed decides the service */
+  ["cant afford to feed my dog", [expect.first("pet-001"), expect.before("pet-001", "pet-002"), expect.noCategory("food")]],
+  ["cant afford to feed my cat", [expect.first("pet-001"), expect.noCategory("food")]],
+  ["need help feeding my pets", [expect.first("pet-001"), expect.noCategory("food")]],
+  ["cant afford to feed my kids", [expect.firstCategory("food"), expect.noCategory("pet")]],
+  ["cant afford to feed my family", [expect.firstCategory("food"), expect.noCategory("pet")]],
+  ["my dog is sick", [expect.first("pet-002"), expect.noCategory("food")]],
+  ["dog", [expect.noCategory("food")]],
+  ["Light House Mission", [r => ["food-006","housing-002"].every(id => r.ids.slice(0, 2).includes(id)) ? null : `top 2 are ${r.ids.slice(0, 2).join(" ")}`]],
 
   /* Conservative spelling repairs */
   ["veternarian", [expect.first("pet-002")]],
@@ -303,13 +333,47 @@ function runSuite() {
     [{name:"Free Recovery Housing", description:"Free housing with recovery support.", requirements:""}, "free"],
     [{name:"Test Sober House", description:"Sober living. Free meals and transportation provided.", requirements:""}, "unknown"]
   ];
-  costCases.forEach(([listing, expected]) => {
+  /* Fourth review (Codex's listing probes, searched for "free sober living"):
+     free or paid evidence must belong to the requested service itself. */
+  const codexCostProbes = [
+    [{name:"Test Sober House", description:"No free housing is available.", requirements:""}, "unknown"],
+    [{name:"Test Sober House", description:"Consultation is free for sober living placement.", requirements:""}, "unknown"],
+    [{name:"Test Sober House", description:"Free recovery counseling.", requirements:""}, "unknown"],
+    [{name:"Test Sober House", description:"Free recovery counseling plus $100/week housing.", requirements:""}, "paid"],
+    [{name:"Test Sober House", description:"Free housing. Meals cost $10/day.", requirements:""}, "free"]
+  ];
+  [...costCases, ...codexCostProbes].forEach(([listing, expected]) => {
     let got;
     try { got = documentedCost({tags:[], ...listing}, costQuery); } catch (err) { got = `error: ${err.message}`; }
     const ok = got === expected;
     rows.push({query:`(cost: "${listing.description}" / "${listing.requirements}")`, result:{ids:[], urgent:null}, failures: ok ? [] : [`documented cost ${got}, expected ${expected}`]});
     if (!ok) failed++;
   });
+
+  /* Whether the PERSON asks for no-cost help (Codex's exact query probes). */
+  [["smoke-free sober living", false], ["drug-free sober living", false], ["housing does not have to be free", false],
+   ["free consultation for sober living", false], ["free sober living", true], ["sober living that is free", true],
+   ["sober living at no cost", true]].forEach(([query, expected]) => {
+    const got = analyzeSearchQuery(query, "en", RESOURCES).wantsFree;
+    const ok = got === expected;
+    rows.push({query:`(asks for no-cost help: "${query}")`, result:{ids:[], urgent:null}, failures: ok ? [] : [`no-cost request ${got}, expected ${expected}`]});
+    if (!ok) failed++;
+  });
+
+  /* The unchanged seven-listing fixture, searched as its own directory:
+     actual result order, not just the classifications. IDs and category are
+     added only so results can be identified and scored. */
+  const fixture = costCases.map(([listing], i) => ({id:`fixture-${i + 1}`, category:"recovery", tags:[], ...listing}));
+  const fixtureIds = searchResources(fixture, "free sober living", "en").results.map(r => r.id);
+  const fixturePaid = ["fixture-1", "fixture-4", "fixture-5"], fixtureUnknown = ["fixture-2", "fixture-3", "fixture-7"];
+  const fixtureProblems = [];
+  if (fixtureIds[0] !== "fixture-6") fixtureProblems.push(`first is ${fixtureIds[0]}, expected fixture-6 (documented free housing)`);
+  fixturePaid.forEach(paid => fixtureUnknown.forEach(unknown => {
+    const pp = fixtureIds.indexOf(paid), pu = fixtureIds.indexOf(unknown);
+    if (pp >= 0 && pu >= 0 && pp < pu) fixtureProblems.push(`${paid} (paid) before ${unknown} (unknown)`);
+  }));
+  rows.push({query:`(fixture order for "free sober living": ${fixtureIds.join(" ")})`, result:{ids:[], urgent:null}, failures: fixtureProblems});
+  if (fixtureProblems.length) failed++;
 
   /* Search speed: the UI runs searchResources on every query. Budget is
      generous for desktop browsers; slow hardware may need more. */

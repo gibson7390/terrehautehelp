@@ -24,6 +24,8 @@ a passing run means these cases behave as expected, not that search is correct.
   ```
   The `<h1 id="summary">` line gives the totals. `<script id="report-json">` holds the machine-readable results.
 - **UI checks:** these need http, because the site loads in a same-origin iframe. Serve the repository root on localhost and open `/tests/eval/ui.html` in a normal browser window. Headless Edge can stall the page's `requestAnimationFrame` rendering. Timeouts are therefore reported as *harness errors*, never as defects. Use a visible browser for a trustworthy UI result.
+  - A timeout message now records where the site frame sat in the viewport, whether the frame's `requestAnimationFrame` fired within 2 seconds, and the frame's visibility state. A timeout with "did not fire" points to browser scheduling (hidden, background or throttled tab), not to a product defect.
+  - `?only=<text>` runs only the checks whose name contains `<text>`; `?repeat=N` (max 20) repeats them. Each row's JSON includes the time each step took to update the page.
 
 ## Expectation keys
 
