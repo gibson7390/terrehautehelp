@@ -121,7 +121,13 @@ const SEARCH_LEXICONS = {
         /* Past-tense ingestion only: "i take too many pills" describes
            medication management, not an acute ingestion. */
         /\b(?:took|taken|swallowed|ate|had) (?:too many|way too many) (?:pills|meds|tablets|capsules)\b/,
-        /\b(?:took|taken|swallowed|ate|drank|had) (?:too much|way too much) (?:medicine|medication|meds)\b/
+        /\b(?:took|taken|swallowed|ate|drank|had) (?:too much|way too much) (?:medicine|medication|meds)\b/,
+        /* Acute by what is described, not by tense: an ingestion someone
+           witnessed, swallowing in progress, or taking "right now". Routine
+           wording ("is taking too many pills and cant keep track") is not. */
+        /\b(?:saw|seen|see|watched|watch|watching|caught|found|noticed) (?:her|him|them|someone|somebody|my \w+) (?:take|taking|took|swallow|swallowing|swallowed|eat|eating|ate) (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds))\b/,
+        /\b(?:is|are|am|s|was|were|keeps|kept) (?:swallowing|eating) (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds))\b/,
+        /\b(?:is|are|am|s|was|were) taking (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds)) (?:right now|now|at this moment|as we speak|tonight)\b/
       ]},
       {signal:"domestic violence", urgent:null, tokens:["domestic","violence"], patterns:[
         /\b(?:boyfriend|girlfriend|husband|wife|partner|spouse|ex|fiance|dad|father|stepdad|stepfather|mom|mother|he|she|they)(?: keeps| is| always| has been| has| just| will| still)? (?:hit|hits|hitting|beat|beats|beating|choke|chokes|choked|choking|strangled|abuse|abuses|abused|abusing|threaten|threatens|threatened|threatening|hurt|hurts|hurting|kicks|kicked|rapes|raped) (?:me|us|my (?:kids|children|son|daughter|baby))\b(?! up\b(?! against\b))/,
@@ -154,6 +160,7 @@ const SEARCH_LEXICONS = {
       /* A denial of the ingestion itself ("i did not take too many pills",
          "i never took too many pills"). */
       /\b(?:did not|didnt|never|have not|havent|has not|hasnt|had not|hadnt) (?:take|took|taken|swallow|swallowed|eat|ate|eaten|drink|drank|have|had) (?:too many|way too many|too much|way too much) (?:pills|meds|tablets|capsules|medicine|medication)\b/,
+      /\b(?:did not|didnt|never) (?:see|saw|watch|watched|notice|noticed) (?:her|him|them|someone|somebody) (?:take|took|swallow|swallowed|eat|ate) (?:way )?(?:too many|too much) (?:pills|meds|tablets|capsules|medicine|medication)\b/,
       /\b(?:end|ending|ended) (?:it|things|the relationship|our relationship|my relationship) with (?:my (?:boyfriend|girlfriend|husband|wife|partner|ex|fiance|fiancee|bf|gf)|him|her|them)\b/
     ],
 
@@ -253,7 +260,9 @@ const SEARCH_LEXICONS = {
        query made only of them asks the person what they need. */
     weakWords: new Set([
       "free","low","cost","service","services","program","programs","support","care","resource","resources",
-      "class","classes","lost"
+      "class","classes","lost",
+      /* "take" describes almost anything ("take-home boxes"); it is not a request */
+      "take","takes","taking","took","taken"
     ]),
 
     /* Broad words for each category. A request using one of these is
@@ -379,6 +388,22 @@ function clauseWords(value) {
     else pending = "hard";
   }
   return {words, breaks};
+}
+
+/* Maps each clause-word position to the matching search-word position.
+   Both come from the same text; the only difference is that the search
+   words join spaced digits ("2 1 1" → "211"). */
+function alignClauseWords(clause, tokens) {
+  const map = new Map();
+  let j = 0;
+  tokens.forEach((token, t) => {
+    if (clause[j] === token) { map.set(j, t); j++; return; }
+    if (/^\d{3}$/.test(token) && clause.slice(j, j + 3).join("") === token) {
+      for (let k = 0; k < 3; k++) map.set(j + k, t);
+      j += 3;
+    }
+  });
+  return map;
 }
 
 /* Like normalizeSearchText, but clause punctuation (. ! ? ; : , dashes and
@@ -648,10 +673,6 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     }
   });
   const crisisText = clause.map((word, i) => (i && breaks[i] === "hard" ? "| " : "") + (masked.has(i) ? "|" : word)).join(" ");
-  /* Words of a benign or denied statement ("i did not take too many
-     pills") are not search terms either, or "take" finds "take-home
-     boxes"; only service words among them keep their meaning. */
-  const benignWords = new Set([...masked].map(i => clause[i]));
   lexicon.crisisPhrases.forEach(rule => {
     rule.patterns.forEach(pattern => {
       const global = new RegExp(pattern.source, "g");
@@ -712,9 +733,15 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      "myself") would otherwise match unrelated listings such as In-Home Care. */
   const isServiceTerm = token => Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
   const negatedCost = negatedCostWordIndexes(normalized);
+  /* The words of a benign or denied statement ("i burned myself cooking
+     dinner", "i did not take too many pills") are not search terms, but
+     only at the positions that statement occupies: "dinner" in a separate
+     "i need dinner tonight" is still searched. */
+  const clauseToToken = alignClauseWords(clause, rawTokens);
+  const benignPositions = new Set([...masked].map(i => clauseToToken.get(i)).filter(i => i !== undefined));
   const baseTokens = [
     ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) &&
-      (!(crisisSpanWords.has(token) || benignWords.has(token)) || isServiceTerm(token)) && !situationalWords.has(token)),
+      (!(crisisSpanWords.has(token) || benignPositions.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
@@ -1268,9 +1295,10 @@ function searchResources(resources, rawQuery, language = "en") {
   const filtered = scored.filter(item => {
     /* An exact organization name, or a documented affiliation, is always shown. */
     if (item.organization) return true;
-    /* Listings that match only through generic words ("lost", "classes")
-       are dropped once any listing matches the request itself. */
-    if (item.weakOnly && anyContent) return false;
+    /* Listings that match only through generic words ("lost", "classes",
+       "take") are never results: a query made only of generic words gets
+       the "tell us what you need" prompt instead. */
+    if (item.weakOnly) return false;
     /* A listing in the requested category that matches only by category is
        kept when the person is browsing that category broadly, but not when
        they named a sub-service that other listings there describe. */

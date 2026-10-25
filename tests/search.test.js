@@ -328,6 +328,35 @@ const CASES = [
   ["he is not breathing! i take too many pills to keep track of", [expect.urgentList([EMERGENCY])]],
   ["he is not breathing\nhard to tell if he has a pulse", [expect.urgentList([EMERGENCY])]],
 
+  /* Seventh review: an excluded benign statement removes only its own word
+     positions; the same word in a separate request keeps its results
+     (Codex's exact dinner reproduction, plus breakfast/lunch, both orders). */
+  ["i need dinner tonight", [expect.returned("food-006"), expect.urgent(null)]],
+  ["i burned myself cooking dinner. i need dinner tonight", [expect.urgent(null), expect.sameOrderAs("i need dinner tonight")]],
+  ["i need dinner tonight. i burned myself cooking dinner", [expect.urgent(null), expect.sameOrderAs("i need dinner tonight")]],
+  ["i need breakfast", [expect.returned("food-006")]],
+  ["i burned myself cooking breakfast, i need breakfast", [expect.urgent(null), expect.sameOrderAs("i need breakfast")]],
+  ["i need breakfast\ni burned myself cooking breakfast", [expect.urgent(null), expect.sameOrderAs("i need breakfast")]],
+  ["i need lunch", [expect.anyReturned(["food-007", "food-003", "food-005"])]],
+  ["i cut myself cooking lunch; i need lunch", [expect.urgent(null), expect.sameOrderAs("i need lunch")]],
+  ["i need lunch... i cut myself cooking lunch", [expect.urgent(null), expect.sameOrderAs("i need lunch")]],
+
+  /* Seventh review: witnessed and explicitly ongoing ingestion are acute
+     (Codex's exact reproductions); guidance with no unrelated listings. */
+  ["i just saw her take too many pills", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["she is swallowing too many pills right now", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["i watched him swallow too many pills", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  ["he is taking too many pills right now", [expect.urgentList([EMERGENCY]), expect.noResults()]],
+  /* Routine medication management is not acute, and "take" alone does not
+     find a food pantry's "take-home boxes"... */
+  ["i take too many pills to keep track of", [expect.urgent(null), expect.noCategory("food")]],
+  ["my mom is taking too many pills and cant keep track", [expect.urgent(null), expect.noCategory("food")]],
+  /* ...while a separate food request in the same query still finds food */
+  ["i take too many pills to keep track of. i need food", [expect.urgent(null), expect.someCategory("food", 3)]],
+  ["i need food. i take too many pills to keep track of", [expect.urgent(null), expect.someCategory("food", 3)]],
+  /* Denials are unchanged */
+  ["i did not take too many pills", [expect.urgent(null)]],
+
   /* Restored cost negation */
   ["sober living no need for it to be free", [expect.sameOrderAs("sober living")]],
 

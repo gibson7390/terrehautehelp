@@ -232,7 +232,10 @@ const GUIDANCE_EMPTY = "No additional directory listings matched your search.";
   ["i did not take too many pills. she took too many pills", true],
   ["she took too many pills, i did not take too many pills", true],
   ["i am not breathing hard after exercise... he is not breathing", true],
-  ["he is not breathing; i am not breathing hard after exercise", true]
+  ["he is not breathing; i am not breathing hard after exercise", true],
+  /* Seventh review: Codex's exact acute-ingestion reproductions */
+  ["i just saw her take too many pills", true],
+  ["she is swallowing too many pills right now", true]
 ].forEach(([query, expectGuidance]) => {
   ui("crisis", `visible guidance for "${query}": ${expectGuidance ? "shown first" : "not shown"}`, async () => {
     await search(query);
@@ -248,6 +251,21 @@ const GUIDANCE_EMPTY = "No additional directory listings matched your search.";
     return f;
   }, {sev:"critical", src:"codex3"});
 });
+ui("search", "a benign cooking statement does not erase a separate dinner request", async () => {
+  await search("i need dinner tonight");
+  const alone = state().ids.join(" ");
+  await search("i burned myself cooking dinner. i need dinner tonight");
+  const s = state(), f = [];
+  if (!alone) f.push("no results for the dinner request alone");
+  if (s.ids.join(" ") !== alone) f.push(`results "${s.ids.join(" ")}" differ from "${alone}"`);
+  if (s.urgent.length) f.push("emergency guidance shown for an ordinary statement");
+  return f;
+}, {sev:"high", src:"codex4"});
+ui("search", "medication-management wording shows no food pantry", async () => {
+  await search("i take too many pills to keep track of");
+  const s = state();
+  return s.cats.includes("food") || s.urgent.length ? [`food: ${s.cats.includes("food")}, guidance: ${s.urgent.join() || "none"}`] : [];
+}, {sev:"medium", src:"codex4"});
 ui("crisis", "without guidance, an empty search still says No results found", async () => {
   await search("zxqv blorpt");
   return /^No results found/.test(emptyStateText()) ? [] : [`empty state reads "${emptyStateText()}"`];
