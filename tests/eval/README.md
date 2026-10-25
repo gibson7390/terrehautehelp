@@ -38,6 +38,7 @@ a passing run means these cases behave as expected, not that search is correct.
 | `has` | Each ID appears anywhere in the results | recall |
 | `needs` | For each group of IDs, at least one is returned (one result per explicit need) | recall |
 | `urgentAll` | Exact list of guidance cards, in order, e.g. `["overdose","mental-crisis"]` | guidance |
+| `urgentIncludes` | These guidance cards must be among those shown (others may also appear) | guidance |
 | `ahead: [[id, cat]]` | `id` is returned and ranks above every result in category `cat` | recall / ranking |
 | `notAhead: [[id, cat]]` | If returned, `id` is not promoted above every `cat` result | precision |
 | `before: [[a, b]]` | `a` is returned and ranks before `b` (if `b` is returned) | recall / ranking |
@@ -74,6 +75,8 @@ Order is always asserted by resource ID, never by score values.
 - After that, the set has been used: write a fresh holdout set before the next tuning cycle.
 
 **Status:** the holdout was run once, as author-run validation, against `app.js` `02ed160823871aec` (23 of 41 passed). That first-run report is preserved unchanged in `reports/holdout-run-1/`. The 41 cases are now regression coverage, not unseen tests; run them with `?holdout=1` and compare against that report. Any new holdout set should be written by someone other than the person tuning the search.
+
+After independent review, four former-holdout expectations were corrected in `holdout.js` (03, 04, 12, 33); each carries a comment with its reason and its original expectation. The first-run report is not changed by those corrections.
 
 ## Known retrieval issues (tracked, not missing services)
 

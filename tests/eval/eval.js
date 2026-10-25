@@ -26,6 +26,8 @@ function evalCheck(c, r) {
   if (Object.prototype.hasOwnProperty.call(e, "g") && r.urgent !== e.g) {
     fail("guidance", `urgent guidance ${JSON.stringify(r.urgent)}, expected ${JSON.stringify(e.g)}`, "g");
   }
+  (e.urgentIncludes || []).filter(kind => !r.urgentAll.includes(kind)).forEach(kind =>
+    fail("guidance", `urgent guidance ${JSON.stringify(r.urgentAll)} lacks ${kind}`, "g"));
   if (e.urgentAll && JSON.stringify(r.urgentAll) !== JSON.stringify(e.urgentAll)) {
     fail("guidance", `urgent guidance ${JSON.stringify(r.urgentAll)}, expected ${JSON.stringify(e.urgentAll)}`, "g");
   }
@@ -123,6 +125,7 @@ function evalDescribe(e) {
   if (e.coverage) parts.push(`each of ${e.coverage.cats.join(", ")} in top ${e.coverage.n}`);
   if (e.needs) parts.push(`one result per need: ${e.needs.map(g => g.join("/")).join(" + ")}`);
   if (e.urgentAll) parts.push(`guidance cards: ${e.urgentAll.join(", ") || "none"}`);
+  if (e.urgentIncludes) parts.push(`guidance includes: ${e.urgentIncludes.join(", ")}`);
   if (e.ahead) parts.push(e.ahead.map(([id, cat]) => `${id} ahead of all ${cat}`).join("; "));
   if (e.notAhead) parts.push(e.notAhead.map(([id, cat]) => `${id} not promoted ahead of ${cat}`).join("; "));
   if (e.before) parts.push(e.before.map(([a, b]) => `${a} before ${b}`).join("; "));

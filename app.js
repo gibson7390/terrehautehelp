@@ -100,6 +100,17 @@ const COMMON_ENGLISH_WORDS = new Set((
   "worth would write wrong yard yeah year yell yes yesterday yet you young your yours yourself"
 ).split(" "));
 
+/* Complete routine-waking contexts, appended to the unresponsive-person
+   patterns as a negative lookahead: waking for an obligation or at a usual
+   time, not a person who cannot be roused. */
+const ROUTINE_WAKING = String.raw`(?! (?:for (?:school|work|class|church|the bus|breakfast|his job|her job)|in (?:the morning|time)|on time|early|at (?:night|\d+)|before (?:school|work|noon)|(?:until|till) (?:noon|late|lunch)|on (?:weekends|school days|weekdays))\b)`;
+
+/* Where an indirect-distress phrase may end: a sentence break, the end of
+   the query, "anymore", or a conjunction that starts a separate request
+   ("…going on and i need food"). Anything else continues the phrase into
+   an ordinary meaning ("going on this trip"). */
+const DISTRESS_PHRASE_END = String.raw`(?= \||$| anymore\b| (?:and|but|so|plus) (?:i |im |i am |also |i also )?(?:need|want|have|am|got|cant|can|looking|could|would)\b)`;
+
 /* "feed <whose> <who>" phrases. What is being fed decides the service:
    animals → pet food; people → food assistance. */
 const FEEDING_PHRASES = (() => {
@@ -162,8 +173,10 @@ const SEARCH_LEXICONS = {
       {signal:"selfharm", urgent:"mental-crisis", tokens:["selfharm"], patterns:[
         /\bself ?harm(?:ing|s|ed|er)?\b/,
         /\b(?:cut|cuts|cutting|hurt|hurting|harm|harming|burn|burning|burned) (?:my ?self|me self)\b/,
-        /* An ingestion the wording itself says was intentional. */
-        /\b(?:took|taken|swallowed|ate|downed)(?: [a-z]+){0,5} (?:pills|meds|tablets|capsules|medicine|medication) (?:on purpose|intentionally|to hurt my ?self|to kill my ?self|to die|to end it)\b/
+        /* An ingestion whose stated purpose is self-harm. Deliberate use
+           alone ("i took my prescribed pills on purpose") is not self-harm;
+           excessive amounts get emergency guidance from the quantity rules. */
+        /\b(?:took|taken|swallowed|ate|downed)(?: [a-z]+){0,5} (?:pills|meds|tablets|capsules|medicine|medication)(?: on purpose| intentionally)? (?:to hurt my ?self|to kill my ?self|to die|to end it)\b/
       ]},
       /* Indirect distress. The existing 988 card offers support ("Need
          immediate mental health crisis support?") without claiming an
@@ -171,9 +184,9 @@ const SEARCH_LEXICONS = {
          trip" is not distress; "ending things with my girlfriend" is
          excluded as a relationship ending (benignContexts). */
       {signal:"distress", urgent:"mental-crisis", tokens:["suicide"], patterns:[
-        /\b(?:dont|do not|cant|cannot|can not|no longer) see (?:the |any )?point (?:in|of) (?:going on|living|life|anything)(?= \||$| anymore\b)/,
-        /\b(?:no|not any) (?:point|reason) (?:in |to )?(?:living|going on|keep going)(?= \||$| anymore\b)/,
-        /\b(?:thinking|thought|think) (?:of|about) ending (?:things|it all|everything|it)(?= \||$)/
+        new RegExp(String.raw`\b(?:dont|do not|cant|cannot|can not|no longer) see (?:the |any )?point (?:in|of) (?:going on|living|life|anything)` + DISTRESS_PHRASE_END),
+        new RegExp(String.raw`\b(?:no|not any) (?:point|reason) (?:in |to )?(?:living|going on|keep going)` + DISTRESS_PHRASE_END),
+        new RegExp(String.raw`\b(?:thinking|thought|think) (?:of|about) ending (?:things|it all|everything|it)` + DISTRESS_PHRASE_END)
       ]},
       {signal:"overdose", urgent:"overdose", tokens:["overdose"], patterns:[
         /\boverdos(?:e|ed|es|ing)\b/,
@@ -201,10 +214,12 @@ const SEARCH_LEXICONS = {
         /\b(?:is|are|am|s|was|were) taking (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds)) (?:right now|now|at this moment|as we speak|tonight)\b/,
         /* Large quantities taken at once. */
         /\b(?:took|taken|swallowed|ate|downed) (?:a bunch of|a handful of|a whole bottle of|the whole bottle of|a bottle of) (?:my |her |his |their |the |these |those )?(?:pills|meds|tablets|capsules|medicine|medication)\b/,
-        /* A person who cannot be woken or does not respond. Routine wording
-           ("wont wake up for school", "cant wake up early") is excluded. */
-        /\b(?:he|she|they|someone|somebody|my \w+)(?: is| s| was)? (?:not|isnt|wasnt|wont|will not|cant|cannot|can not) (?:waking up|wake up|be woken|respond|responding)\b(?! (?:for|in|early|on|at|before|until|till|when)\b)/,
-        /\b(?:cant|cannot|can not|couldnt|could not) wake (?:him|her|them|my \w+|someone|somebody)(?: up)?\b(?! (?:for|in|early|on|at|before|until|till|when)\b)/,
+        /* A person who cannot be woken or does not respond. Only complete
+           routine-waking contexts are excluded ("wont wake up for school",
+           "in the morning", "on time"); a location ("in the bathroom", "on
+           the floor") does not cancel the emergency. */
+        new RegExp(String.raw`\b(?:he|she|they|someone|somebody|my \w+)(?: is| s| was)? (?:not|isnt|wasnt|wont|will not|cant|cannot|can not) (?:waking up|wake up|be woken|respond|responding)\b` + ROUTINE_WAKING),
+        new RegExp(String.raw`\b(?:cant|cannot|can not|couldnt|could not) wake (?:him|her|them|my \w+|someone|somebody)(?: up)?\b(?! up\b)` + ROUTINE_WAKING),
         /\b(?:he|she|they|someone|somebody|my \w+) (?:is|s|was|went|seems) unresponsive\b/
       ]},
       /* Wanting to stop substance use: recovery services, no guidance card.

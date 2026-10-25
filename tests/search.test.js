@@ -65,6 +65,8 @@ const expect = {
     const missing = searchResources(RESOURCES, query, "en").results.slice(0, n).map(x => x.id).filter(id => !r.ids.includes(id));
     return missing.length ? `missing ${missing.join(" ")} from the top ${n} of "${query}"` : null;
   },
+  urgentIncludes: kind => r => r.urgentAll.includes(kind) ? null : `guidance ${JSON.stringify(r.urgentAll)} lacks ${kind}`,
+  urgentExcludes: kind => r => r.urgentAll.includes(kind) ? `guidance ${JSON.stringify(r.urgentAll)} should not include ${kind}` : null,
   anyInTop: (ids, n) => r => ids.some(id => r.ids.slice(0, n).includes(id)) ? null : `none of ${ids.join(" ")} in top ${n} (${r.ids.slice(0, n).join(" ") || "no results"})`,
   categoryBefore: (a, b) => r => {
     const pa = r.categories.indexOf(a), pb = r.categories.indexOf(b);
@@ -426,11 +428,38 @@ const CASES = [
   ["i cant wake him up", [expect.urgentList([EMERGENCY])]],
   ["my son wont wake up for school", [expect.urgent(null)]],
   ["i cant wake up early", [expect.urgent(null)]],
-  /* Intentional ingestion: emergency guidance, plus crisis support because
-     the wording states intent; no overdose card */
-  ["i took a bunch of my pills on purpose", [expect.urgentList([EMERGENCY, MENTAL]), expect.noCategory("food")]],
+  /* Large ingestion: emergency guidance; no overdose card. Corrected after
+     independent review: "on purpose" establishes deliberate ingestion, not
+     suicidal intent, so the 988 card is no longer required for it. */
+  ["i took a bunch of my pills on purpose", [expect.urgentIncludes(EMERGENCY), expect.urgentExcludes(OVERDOSE), expect.noCategory("food")]],
   ["she swallowed a whole bottle of pills", [expect.urgentList([EMERGENCY])]],
-  ["i took a bunch of my pills on purpose. i need food", [expect.urgentList([EMERGENCY, MENTAL]), expect.someCategory("food")]],
+  ["i took a bunch of my pills on purpose. i need food", [expect.urgentIncludes(EMERGENCY), expect.someCategory("food")]],
+
+  /* Independent review (Codex's exact reproductions)
+     1. A location does not cancel an unresponsive-person emergency... */
+  ["my roommate isnt waking up in the bathroom", [expect.urgentList([EMERGENCY]), expect.noCategory("food"), expect.noCategory("recovery")]],
+  ["my roommate isnt waking up on the floor", [expect.urgentList([EMERGENCY]), expect.noCategory("food"), expect.noCategory("recovery")]],
+  ["i cant wake him up on the couch", [expect.urgentList([EMERGENCY])]],
+  ["she is not responding in her room", [expect.urgentList([EMERGENCY])]],
+  /* ...while complete routine-waking contexts stay ordinary */
+  ["my son wont wake up for school", [expect.urgent(null)]],
+  ["he isnt waking up in the morning", [expect.urgent(null)]],
+  ["she wont wake up on time", [expect.urgent(null)]],
+  ["i cant wake him up in time for work", [expect.urgent(null)]],
+  /* 2. An ordinary request after distress keeps the support AND the service... */
+  ["i dont see the point in going on and i need food", [expect.urgentList([MENTAL]), expect.returned("crisis-001"), expect.someCategory("food")]],
+  ["thinking of ending things and need shelter", [expect.urgentList([MENTAL]), expect.returned("crisis-001"), expect.someCategory("housing")]],
+  ["i need food and i dont see the point in going on", [expect.urgentList([MENTAL]), expect.returned("crisis-001"), expect.someCategory("food")]],
+  ["i need shelter and im thinking of ending things", [expect.urgentList([MENTAL]), expect.returned("crisis-001"), expect.someCategory("housing")]],
+  /* ...while ordinary contexts with the same words stay ordinary */
+  ["thinking of ending things with my girlfriend and need shelter", [expect.urgent(null), expect.someCategory("housing")]],
+  ["i dont see the point in going on this trip and i need food", [expect.urgent(null), expect.someCategory("food")]],
+  /* 3. Deliberate medication use is not self-harm; excessive ingestion is an emergency */
+  ["i took my prescribed pills on purpose", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i took my pills on purpose", [expect.urgent(null)]],
+  ["i took too many pills on purpose", [expect.urgentIncludes(EMERGENCY)]],
+  ["i took my pills on purpose to hurt myself", [expect.urgentIncludes(MENTAL)]],
+  ["i took too many pills to kill myself", [expect.urgentIncludes(EMERGENCY), expect.urgentIncludes(MENTAL)]],
   ["i take a bunch of pills every day", [expect.urgent(null)]],
   ["i took my pills on time", [expect.urgent(null)]],
   ["i did not take a bunch of pills", [expect.urgent(null)]],
