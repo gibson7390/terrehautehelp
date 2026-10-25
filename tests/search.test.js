@@ -60,6 +60,11 @@ const expect = {
     const other = searchResources(RESOURCES, query, "en").results.map(x => x.id);
     return JSON.stringify(other) === JSON.stringify(r.ids) ? null : `order differs from "${query}": ${r.ids.slice(0, 5).join(" ")} vs ${other.slice(0, 5).join(" ")}`;
   },
+  /* The top n results of an independent request all appear here too. */
+  includesTopOf: (query, n) => r => {
+    const missing = searchResources(RESOURCES, query, "en").results.slice(0, n).map(x => x.id).filter(id => !r.ids.includes(id));
+    return missing.length ? `missing ${missing.join(" ")} from the top ${n} of "${query}"` : null;
+  },
   categoryCount: (cat, min) => r => r.categories.filter(c => c === cat).length >= min ? null : `only ${r.categories.filter(c => c === cat).length} ${cat} results, expected at least ${min}`,
   status: s => r => r.status === s ? null : `status ${r.status}, expected ${s}`
 };
@@ -356,6 +361,30 @@ const CASES = [
   ["i need food. i take too many pills to keep track of", [expect.urgent(null), expect.someCategory("food", 3)]],
   /* Denials are unchanged */
   ["i did not take too many pills", [expect.urgent(null)]],
+
+  /* Eighth review: words inside a crisis phrase are excluded only at that
+     phrase's positions (Codex's exact reproductions, both orders). */
+  ["i need in home care", [expect.returned("senior-003")]],
+  ["i dont feel safe at home. i need in home care", [
+    expect.inTop("crisis-002", 3), expect.returned("housing-001"), expect.returned("senior-003")
+  ]],
+  ["i need in home care. i dont feel safe at home", [
+    expect.inTop("crisis-002", 3), expect.returned("housing-001"), expect.returned("senior-003")
+  ]],
+  /* Repeated words across a crisis phrase and an independent request,
+     both orders, punctuation and line-break variants */
+  ["i dont feel safe at home, i need in home care", [expect.inTop("crisis-002", 3), expect.returned("senior-003")]],
+  ["i need in home care\ni dont feel safe at home", [expect.inTop("crisis-002", 3), expect.returned("senior-003")]],
+  ["i dont feel safe at home... i need home delivered meals", [expect.inTop("crisis-002", 3), expect.includesTopOf("i need home delivered meals", 1)]],
+  ["i need home delivered meals; i dont feel safe at home", [expect.inTop("crisis-002", 3), expect.includesTopOf("i need home delivered meals", 1)]],
+  ["i want to end my life. i need life skills training", [expect.urgentList([MENTAL]), expect.first("crisis-001"), expect.includesTopOf("i need life skills training", 1)]],
+  ["i need life skills training. i want to end my life", [expect.urgentList([MENTAL]), expect.first("crisis-001"), expect.includesTopOf("i need life skills training", 1)]],
+  /* Alignment: spaced digits ("2 1 1" → "211") before the crisis phrase */
+  ["call 2 1 1. i dont feel safe at home. i need in home care", [
+    expect.returned("crisis-005"), expect.returned("crisis-002"), expect.returned("senior-003")
+  ]],
+  /* A crisis phrase alone still excludes its ordinary words ("safe at home" ≠ in-home care) */
+  ["i dont feel safe at home", [expect.first("crisis-002"), expect.absent("senior-003")]],
 
   /* Restored cost negation */
   ["sober living no need for it to be free", [expect.sameOrderAs("sober living")]],

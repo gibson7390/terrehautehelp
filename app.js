@@ -652,7 +652,10 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      words, and the words inside it are never fuzzily corrected. */
   const signals = [];
   const lockedTokens = new Set();
-  const crisisSpanWords = new Set();
+  /* Clause positions covered by crisis matches. Excluded from searching by
+     position, like benign statements: "home" in "i dont feel safe at home"
+     is not searched, but "home" in a separate "i need in home care" is. */
+  const crisisPositions = new Set();
   /* Two views of the query's clauses. Benign contexts are matched where
      EVERY break (including ellipses and line breaks) ends the match, so an
      ordinary phrase can never absorb words from a neighbouring thought.
@@ -672,13 +675,24 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
       if (!match[0]) global.lastIndex++;
     }
   });
-  const crisisText = clause.map((word, i) => (i && breaks[i] === "hard" ? "| " : "") + (masked.has(i) ? "|" : word)).join(" ");
+  /* The crisis view keeps, for each of its words, the clause position it
+     came from (-1 for a sentence break), so a crisis match can be traced
+     back to exact positions. */
+  const crisisParts = [];
+  clause.forEach((word, i) => {
+    if (i && breaks[i] === "hard") crisisParts.push({text:"|", position:-1});
+    crisisParts.push({text:masked.has(i) ? "|" : word, position:i});
+  });
+  const crisisText = crisisParts.map(part => part.text).join(" ");
   lexicon.crisisPhrases.forEach(rule => {
     rule.patterns.forEach(pattern => {
       const global = new RegExp(pattern.source, "g");
       let match;
       while ((match = global.exec(crisisText))) {
-        match[0].split(" ").filter(word => /^[a-z0-9]+$/.test(word)).forEach(word => { lockedTokens.add(word); crisisSpanWords.add(word); });
+        match[0].split(" ").filter(word => /^[a-z0-9]+$/.test(word)).forEach(word => lockedTokens.add(word));
+        const first = crisisText.slice(0, match.index).split(" ").filter(Boolean).length;
+        const count = match[0].split(" ").filter(Boolean).length;
+        crisisParts.slice(first, first + count).forEach(part => { if (part.position >= 0) crisisPositions.add(part.position); });
         if (!signals.includes(rule)) signals.push(rule);
         if (!match[0]) global.lastIndex++;
       }
@@ -738,10 +752,12 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      only at the positions that statement occupies: "dinner" in a separate
      "i need dinner tonight" is still searched. */
   const clauseToToken = alignClauseWords(clause, rawTokens);
-  const benignPositions = new Set([...masked].map(i => clauseToToken.get(i)).filter(i => i !== undefined));
+  const toTokenPositions = positions => new Set([...positions].map(i => clauseToToken.get(i)).filter(i => i !== undefined));
+  const benignPositions = toTokenPositions(masked);
+  const crisisTokenPositions = toTokenPositions(crisisPositions);
   const baseTokens = [
     ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) &&
-      (!(crisisSpanWords.has(token) || benignPositions.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
+      (!(crisisTokenPositions.has(i) || benignPositions.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
