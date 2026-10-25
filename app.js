@@ -81,7 +81,7 @@ const SEARCH_LEXICONS = {
        card because the site has none. */
     crisisPhrases: [
       {signal:"suicide", urgent:"mental-crisis", tokens:["suicide"], patterns:[
-        /\b(?:want|wanna|wanted|wish|wishing|ready|trying|try|plan|planning|planned|thinking about|thought about|deserve) (?:to )?(?:die|be dead|end it all|end it)\b/,
+        /\b(?:want|wants|wanna|wanted|wish|wishing|ready|trying|try|plan|planning|planned|thinking about|thought about|deserve) (?:to )?(?:die|be dead|end it all|end it)\b/,
         /\b(?:kill|killing|killed|hang|hanging|shoot|shooting) (?:my ?self|me self)\b/,
         /\b(?:end|ending|take|taking) my (?:own )?life\b/,
         /\b(?:wish i (?:was|were) dead|better off dead|no reason to live|dont want to (?:live|be alive|wake up))\b/
@@ -96,7 +96,7 @@ const SEARCH_LEXICONS = {
         /\b(?:he|she|they|someone|somebody|i|im|friend|my \w+)(?: is| s| was| keeps)? (?:oding|odding)\b/,
         /* "od'd" normalizes to "odd", an ordinary word: accept it only with a
            subject and nothing after it, or followed by a substance. */
-        /\b(?:he|she|they|someone|somebody|my \w+)(?: just)? odd$/,
+        /\b(?:he|she|they|someone|somebody|my \w+)(?: just)? odd(?= \||$)/,
         /\b(?:od|ods|oded|odd|oding|odding) on (?:fentanyl|fent|heroin|dope|pills|meth|drugs|opioids|oxy|oxys|xanax|percs|percocet|methadone)\b/
       ]},
       {signal:"domestic violence", urgent:null, tokens:["domestic","violence"], patterns:[
@@ -110,14 +110,17 @@ const SEARCH_LEXICONS = {
     ],
 
     /* Complete ordinary sentences that contain a crisis-like phrase. Each is
-       masked before crisis matching, so only that span is excluded: a separate
-       explicit phrase in the same query ("...a piece of cake but i want to
-       die") is still recognised. Short continuations alone ("while", "over
-       this") are never treated as benign. */
+       masked before crisis matching, so only its own exact span is excluded:
+       a separate explicit phrase in the same query ("...a piece of cake but i
+       want to die") is still recognised. Every word is listed explicitly —
+       no wildcards — and matching never crosses a clause boundary, so a
+       benign pattern cannot absorb words from a neighbouring sentence ("I cut
+       myself. A piece of me wants to die"). Short continuations alone
+       ("while", "over this") are never treated as benign. */
     benignContexts: [
-      /\bcut(?:s|ting)? (?:my ?self) (?:a|an|another|some) (?:piece|slice|bit|break)(?: of \w+)?\b/,
-      /\bcut(?:s|ting)? (?:my ?self) (?:some )?slack\b/,
-      /\b(?:cut|cuts|cutting|burn|burned|burnt|burning|hurt|hurting) (?:my ?self) (?:while )?(?:shaving|cooking(?: \w+)?|chopping \w+|on the (?:stove|oven|grill)|lifting \w+|working out|at the gym|at work|by accident)\b/,
+      /\bcut(?:s|ting)? (?:my ?self) (?:a|an|another|some) (?:piece|slice|bite|bit) of (?:cake|pie|pizza|bread|cheese|meat|ham|turkey|fruit|watermelon)\b/,
+      /\bcut(?:s|ting)? (?:my ?self) (?:a break|some slack|slack)\b/,
+      /\b(?:cut|cuts|cutting|burn|burned|burnt|burning|hurt|hurting) (?:my ?self) (?:while )?(?:shaving|cooking(?: (?:dinner|breakfast|lunch|supper|food))?|chopping (?:onions|vegetables|veggies|wood|food|carrots)|on the (?:stove|oven|grill)|lifting (?:weights|boxes|furniture)|working out|at the gym|at work|by accident)\b/,
       /\baccidentally (?:cut|burned|burnt|hurt) (?:my ?self)\b/,
       /\b(?:kill|killing|killed) (?:my ?self) laughing\b/,
       /\b(?:end|ending|ended) (?:it|things|the relationship|our relationship|my relationship) with (?:my (?:boyfriend|girlfriend|husband|wife|partner|ex|fiance|fiancee|bf|gf)|him|her|them)\b/
@@ -182,7 +185,7 @@ const SEARCH_LEXICONS = {
       },
       pet: {
         pet:2.5, pets:2.5, dog:2.3, dogs:2.3, cat:2.3, cats:2.3, animal:2.1,
-        animals:2.1, vet:2.5, veterinary:2.5, spay:2.2, neuter:2.2
+        animals:2.1, vet:2.5, veterinary:2.5, veterinarian:2.5, spay:2.2, neuter:2.2
       },
       immigration: {
         immigration:2.7, immigrant:2.5, immigrants:2.5, refugee:2.5, refugees:2.5,
@@ -315,6 +318,23 @@ function normalizeSearchText(value) {
     .replace(/[’']/g, "")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* Like normalizeSearchText, but clause punctuation (. ! ? ; : , dashes and
+   line breaks) becomes a "|" boundary. Crisis and benign patterns join words
+   with single spaces, so no match can cross a boundary. */
+function normalizeClauseText(value) {
+  return String(value == null ? "" : value)
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[.!?;:,—–\r\n]+/g, " | ")
+    .replace(/[^a-z0-9|]+/g, " ")
+    .replace(/\b(\d) (\d) (\d)\b/g, "$1$2$3")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -463,7 +483,10 @@ function conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, da
     }
   });
 
-  if (bestDistance > maxDistance || !best.length) return missingLettersCorrection(token, lexicon, vocabulary);
+  if (bestDistance > maxDistance || !best.length) {
+    const vowelOnly = vowelErrorCorrection(token, lexicon, vocabulary);
+    return vowelOnly !== token ? vowelOnly : missingLettersCorrection(token, lexicon, vocabulary, datasetWords);
+  }
   if (best.length === 1) return best[0];
   /* A tie is resolved only when every candidate is a service term for the
      same categories (hungery → hunger / hungry, both Food). Otherwise the
@@ -472,27 +495,45 @@ function conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, da
   return intents.size === 1 && !intents.has("") ? best.sort()[0] : token;
 }
 
+/* Fallback for a 5–7 letter word whose only errors are in its vowels
+   ("rentle" → "rental"): two edits are allowed when the consonants are
+   identical and in order, toward lexicon service terms with the same first
+   letter, and only when every candidate means the same service. */
+function vowelErrorCorrection(token, lexicon, vocabulary) {
+  if (token.length < 5 || token.length > 7) return token;
+  const skeleton = consonantSkeleton(token);
+  const candidates = [...vocabulary].filter(candidate =>
+    candidate[0] === token[0] && Math.abs(candidate.length - token.length) <= 2 &&
+    serviceCategoriesFor(candidate, lexicon) && consonantSkeleton(candidate) === skeleton &&
+    damerauLevenshtein(token, candidate) <= 2
+  );
+  if (!candidates.length) return token;
+  const intents = new Set(candidates.map(candidate => serviceCategoriesFor(candidate, lexicon)));
+  return intents.size === 1 ? candidates.sort()[0] : token;
+}
+
 /* Fallback for a word with up to two letters left out ("homles" →
-   "homeless"), the most common low-literacy misspelling. Deliberately
-   narrow: only 5–7 letter words, only toward lexicon service terms with
-   the same first letter, only by adding letters, and only when every
-   candidate means the same service. */
-function missingLettersCorrection(token, lexicon, vocabulary) {
+   "homeless", "compter" → "computers"), the most common low-literacy
+   misspelling. Deliberately narrow: only 5–7 letter words, only by adding
+   letters, same first letter. Toward lexicon service terms when every
+   candidate means the same service; otherwise toward a directory word only
+   when exactly one directory word fits. */
+function missingLettersCorrection(token, lexicon, vocabulary, datasetWords) {
   if (token.length < 5 || token.length > 7) return token;
   const isSubsequence = (short, long) => {
     let i = 0;
     for (const ch of long) if (ch === short[i]) i++;
     return i === short.length;
   };
-  const candidates = [...vocabulary].filter(candidate =>
-    candidate[0] === token[0] &&
-    candidate.length > token.length && candidate.length - token.length <= 2 &&
-    serviceCategoriesFor(candidate, lexicon) &&
-    isSubsequence(token, candidate)
-  );
-  if (!candidates.length) return token;
-  const intents = new Set(candidates.map(candidate => serviceCategoriesFor(candidate, lexicon)));
-  return intents.size === 1 ? candidates.sort()[0] : token;
+  const fits = candidate => candidate[0] === token[0] &&
+    candidate.length > token.length && candidate.length - token.length <= 2 && isSubsequence(token, candidate);
+  const serviceCandidates = [...vocabulary].filter(candidate => serviceCategoriesFor(candidate, lexicon) && fits(candidate));
+  if (serviceCandidates.length) {
+    const intents = new Set(serviceCandidates.map(candidate => serviceCategoriesFor(candidate, lexicon)));
+    return intents.size === 1 ? serviceCandidates.sort()[0] : token;
+  }
+  const directoryCandidates = datasetWords ? [...datasetWords].filter(fits) : [];
+  return directoryCandidates.length === 1 ? directoryCandidates[0] : token;
 }
 
 function categoryTermStrength(termMap, token) {
@@ -516,6 +557,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const lexicon = SEARCH_LEXICONS[language] || SEARCH_LEXICONS.en;
   const vocabulary = buildSearchVocabulary(lexicon);
   const datasetWords = buildDatasetVocabulary(resources);
+  const frequency = buildDatasetIndex(resources).frequency;
   /* "2-1-1" and "9 1 1" normalize to separate digits; rejoin them. */
   const normalized = normalizeSearchText(rawQuery).replace(/\b(\d) (\d) (\d)\b/g, "$1$2$3");
 
@@ -524,18 +566,19 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const signals = [];
   const lockedTokens = new Set();
   const crisisSpanWords = new Set();
-  /* Mask complete benign contexts with non-word characters of the same
-     length, so word boundaries elsewhere are unaffected. */
+  /* Crisis matching runs on the clause-preserving form of the query. Complete
+     benign contexts are masked with boundary characters of the same length,
+     so word boundaries elsewhere are unaffected. */
   const crisisText = lexicon.benignContexts.reduce(
     (text, pattern) => text.replace(new RegExp(pattern.source, "g"), span => "|".repeat(span.length)),
-    normalized
+    normalizeClauseText(rawQuery)
   );
   lexicon.crisisPhrases.forEach(rule => {
     rule.patterns.forEach(pattern => {
       const global = new RegExp(pattern.source, "g");
       let match;
       while ((match = global.exec(crisisText))) {
-        match[0].split(" ").forEach(word => { lockedTokens.add(word); crisisSpanWords.add(word); });
+        match[0].split(" ").filter(word => /^[a-z0-9]+$/.test(word)).forEach(word => { lockedTokens.add(word); crisisSpanWords.add(word); });
         if (!signals.includes(rule)) signals.push(rule);
         if (!match[0]) global.lastIndex++;
       }
@@ -553,12 +596,17 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
 
   const rawTokens = normalized ? normalized.split(" ") : [];
   const correctedTokens = rawTokens.map(token => conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, datasetWords));
-  /* Words split by a space ("pre school", "day care") are also tried
-     joined, when the joined word is one the lexicon or directory uses. */
+  /* Words split by a space ("pre school", "day care") are joined when the
+     joined word is one the lexicon or directory uses; the joined word then
+     replaces its two parts, which were never separate requests. */
   const compoundTokens = [];
+  const compoundParts = new Set();
   for (let i = 0; i + 1 < correctedTokens.length; i++) {
     const joined = correctedTokens[i] + correctedTokens[i + 1];
-    if (/^[a-z]+$/.test(joined) && (vocabulary.has(joined) || datasetWords.has(joined))) compoundTokens.push(joined);
+    if (/^[a-z]+$/.test(joined) && (vocabulary.has(joined) || datasetWords.has(joined))) {
+      compoundTokens.push(joined);
+      compoundParts.add(i).add(i + 1);
+    }
   }
   const correctedText = correctedTokens.join(" ");
   const signalTokens = signals.flatMap(rule => rule.tokens);
@@ -585,7 +633,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      "myself") would otherwise match unrelated listings such as In-Home Care. */
   const isServiceTerm = token => Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
   const baseTokens = [
-    ...correctedTokens.filter(token => (!crisisSpanWords.has(token) || isServiceTerm(token)) && !situationalWords.has(token)),
+    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && (!crisisSpanWords.has(token) || isServiceTerm(token)) && !situationalWords.has(token)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
@@ -597,10 +645,30 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      service is wanted. A synonym adds intent only when the word typed has
      none, so "lawyer" (already Legal) is not counted three times. */
   const hasIntent = token => Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
-  const intentTokens = [...new Set([
+  const allIntentTokens = [...new Set([
     ...baseTokens,
     ...baseTokens.filter(token => !hasIntent(token)).flatMap(token => lexicon.synonyms[token] || [])
   ])].filter(token => token.length > 1 && !lexicon.stopWords.has(token) && !lexicon.weakWords.has(token));
+
+  /* Beneficiaries ("for my kids", "with my mom") qualify another need rather
+     than adding one: "food for my kids" asks for food. They become a need
+     only when nothing else is asked for ("help with my kids"). */
+  const beneficiaryWords = new Set();
+  const beneficiaryPattern = /\b(?:for|with) (?:my |our |the |his |her |their |a )?(kids|kid|children|child|son|daughter|baby|babies|family|mom|dad|mother|father|grandma|grandpa|husband|wife|women|woman|men|man|veterans|veteran|seniors|senior)\b/g;
+  let beneficiaryMatch;
+  while ((beneficiaryMatch = beneficiaryPattern.exec(normalized))) beneficiaryWords.add(beneficiaryMatch[1]);
+  const otherNeed = allIntentTokens.some(token => !beneficiaryWords.has(token) &&
+    Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token) >= SEARCH_NEED_STRENGTH)) ||
+    detectPhraseConcepts(normalized, lexicon).length > 0 || signals.length > 0;
+  const beneficiaryForms = {kids:["kids","kid","children","child"], kid:["kids","kid","children","child"],
+    children:["kids","kid","children","child"], child:["kids","kid","children","child"], baby:["baby","babies","infant","infants"],
+    babies:["baby","babies","infant","infants"], mom:["mom","mother"], mother:["mom","mother"], dad:["dad","father"], father:["dad","father"],
+    women:["women","woman","womens"], woman:["women","woman","womens"], men:["men","man","mens"], man:["men","man","mens"],
+    veteran:["veteran","veterans"], veterans:["veteran","veterans"],
+    grandma:["grandma","grandmother","senior","seniors","elderly"], grandpa:["grandpa","grandfather","senior","seniors","elderly"],
+    senior:["senior","seniors","elderly"], seniors:["senior","seniors","elderly"]};
+  const qualifierTokens = otherNeed ? [...new Set([...beneficiaryWords].flatMap(word => beneficiaryForms[word] || [word]))] : [];
+  const intentTokens = allIntentTokens.filter(token => !qualifierTokens.includes(token));
   const categoryScores = {};
   Object.entries(lexicon.categoryTerms).forEach(([category, termMap]) => {
     intentTokens.forEach(token => {
@@ -649,14 +717,58 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   if (meaningfulTokens.some(token => ["panic","suicide","suicidal","selfharm"].includes(token))) urgentKinds.add("mental-crisis");
   const urgentEmergencies = ["overdose", "mental-crisis"].filter(kind => urgentKinds.has(kind));
 
+  const strongTokens = meaningfulTokens.filter(token => !lexicon.weakWords.has(token));
+
+  /* Words naming the requested service, for judging whether a listing's
+     "free" applies to it: the words asked for, their concepts' words, and
+     the broad words of each requested category. */
+  const requestedWords = new Set(strongTokens.filter(token => !qualifierTokens.includes(token)).flatMap(token => [token, stemSearchWord(token)]));
+  phraseConcepts.forEach(concept => concept.phrases.forEach(phrase => normalizeSearchText(phrase).split(" ").forEach(word => requestedWords.add(word))));
+  Object.entries(needScores).filter(([, strength]) => strength >= SEARCH_NEED_STRENGTH)
+    .forEach(([category]) => (lexicon.broadTerms[category] || []).forEach(word => requestedWords.add(word)));
+
+  /* Multi-word runs of the query containing a distinctive word (not a stop
+     word, service term or generic word): candidate organization names such
+     as "hamilton center" or "mental health america", longest first. Service
+     phrases from the lexicon ("food pantry") are not organizations. */
+  const conceptPhrases = new Set(lexicon.phraseConcepts.flatMap(concept => concept.phrases.map(normalizeSearchText)));
+  const distinctive = word => word.length > 1 && !/^\d+$/.test(word) && !lexicon.stopWords.has(word) &&
+    !isServiceTerm(word) && !lexicon.weakWords.has(word) &&
+    (frequency.get(word) || 0) > 0 && frequency.get(word) <= SEARCH_ORGANIZATION_WORD_LISTINGS;
+  const organizationPhrases = [];
+  for (let n = rawTokens.length; n >= 2; n--) {
+    for (let i = 0; i + n <= rawTokens.length; i++) {
+      const words = rawTokens.slice(i, i + n);
+      const phrase = words.join(" ");
+      if (words.some(distinctive) && !conceptPhrases.has(phrase)) organizationPhrases.push(phrase);
+    }
+  }
+
+  /* Per-word facts used for every listing, computed once per search. */
+  const tokenInfo = meaningfulTokens.map(token => {
+    const stem = stemSearchWord(token);
+    return {
+      token, stem,
+      weak: lexicon.weakWords.has(token),
+      weakStem: lexicon.weakWords.has(stem),
+      serviceTerm: isServiceTerm(token),
+      rare: (frequency.get(token) || frequency.get(stem) || Infinity) <= SEARCH_RARE_WORD_LISTINGS,
+      qualifier: qualifierTokens.includes(token)
+    };
+  });
+
   return {
     raw: String(rawQuery == null ? "" : rawQuery).trim(),
     language,
-    wordFrequency: buildDatasetIndex(resources).frequency,
+    wordFrequency: frequency,
     normalized,
     correctedText,
     tokens: meaningfulTokens,
-    strongTokens: meaningfulTokens.filter(token => !lexicon.weakWords.has(token)),
+    tokenInfo,
+    strongTokens,
+    qualifierTokens,
+    requestedWords,
+    organizationPhrases,
     categoryScores,
     needScores,
     broadCategories,
@@ -670,7 +782,23 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   };
 }
 
+/* Listing fields never change during a visit, so they are normalized once
+   per listing object rather than on every search. */
+const resourceFieldCache = typeof WeakMap === "function" ? new WeakMap() : null;
 function normalizedResourceFields(resource) {
+  if (resourceFieldCache && resourceFieldCache.has(resource)) return resourceFieldCache.get(resource);
+  const fields = buildResourceFields(resource);
+  if (resourceFieldCache) resourceFieldCache.set(resource, fields);
+  return fields;
+}
+
+const normalizedPhraseCache = new Map();
+function normalizedPhrase(phrase) {
+  if (!normalizedPhraseCache.has(phrase)) normalizedPhraseCache.set(phrase, normalizeSearchText(phrase));
+  return normalizedPhraseCache.get(phrase);
+}
+
+function buildResourceFields(resource) {
   const categoryMeta = CATEGORY_META[resource.category] || {label:resource.category || ""};
   const fields = {
     name: normalizeSearchText(resource.name),
@@ -686,12 +814,14 @@ function normalizedResourceFields(resource) {
     const words = fields[field] ? fields[field].split(" ") : [];
     fields.tokenSets[field] = new Set([...words, ...words.map(stemSearchWord)]);
   });
+  fields.nameAndTags = `${fields.name} ${fields.tags}`;
+  fields.offer = `${fields.name} ${fields.tags} ${fields.description}`;
   return fields;
 }
 
 function resourceContainsConcept(fields, concept) {
   return concept.phrases.some(phrase => {
-    const p = normalizeSearchText(phrase);
+    const p = normalizedPhrase(phrase);
     return containsPhrase(fields.name, p) || containsPhrase(fields.tags, p) || containsPhrase(fields.description, p) || containsPhrase(fields.requirements, p);
   });
 }
@@ -716,6 +846,10 @@ const URGENT_CONTENT_TERMS = {
    few listings; common words ("living", "help") keep the normal weight. */
 const SEARCH_SPECIFIC_DESCRIPTION_WEIGHT = 12;
 const SEARCH_RARE_WORD_LISTINGS = 4;
+/* A word that can identify an organization appears in few listings
+   ("hamilton", "mission", "america"); common words ("living", "women")
+   cannot make a phrase an organization name. */
+const SEARCH_ORGANIZATION_WORD_LISTINGS = 8;
 
 function scoreResourceForQuery(resource, analysis, context = {}) {
   const lexicon = SEARCH_LEXICONS[analysis.language] || SEARCH_LEXICONS.en;
@@ -730,32 +864,45 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
      overlaps the query ("Pet Food Pantry" for "food pantry", "homeless
      students" for "homeless") offers that other service, not this one. */
   const intended = Object.keys(analysis.categoryScores);
-  const nameAndTags = `${fields.name} ${fields.tags}`;
+  const nameAndTags = fields.nameAndTags;
   const otherService = lexicon.phraseConcepts.some(concept =>
     !intended.some(category => concept.categories[category]) &&
     concept.phrases.some(phrase => {
-      const p = normalizeSearchText(phrase);
+      const p = normalizedPhrase(phrase);
       return containsPhrase(nameAndTags, p) && p.split(" ").some(word => analysis.tokens.includes(word));
     })
   );
 
-  const frequency = analysis.wordFrequency || new Map();
   let weakScore = 0;
   /* A rare, non-category word this listing names ("welding", "breakfast"):
      direct evidence of the specific service, kept even beside larger needs. */
   let rareSpecific = false;
-  analysis.tokens.forEach(token => {
+  /* Beneficiary fit: the listing serves the person named as a qualifier
+     ("children" for "food for my kids"). Used for ordering, never as a match. */
+  const qualifiers = analysis.qualifierTokens || [];
+  const beneficiaryFit = qualifiers.some(word =>
+    fields.tokenSets.name.has(word) || fields.tokenSets.tags.has(word) || fields.tokenSets.description.has(word));
+  /* Need coverage: which requested categories this listing serves, by its
+     own category or by service words it mentions. */
+  const coveredNeeds = new Set([resource.category]);
+  const infos = analysis.tokenInfo || analysis.tokens.map(token => {
     const stem = stemSearchWord(token);
-    const serviceTerm = Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
-    const rare = (frequency.get(token) || frequency.get(stem) || Infinity) <= SEARCH_RARE_WORD_LISTINGS;
+    return {token, stem, weak:lexicon.weakWords.has(token), weakStem:lexicon.weakWords.has(stem),
+      serviceTerm:Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token)), rare:false, qualifier:false};
+  });
+  infos.forEach(({token, stem, weak:weakToken, weakStem, serviceTerm, rare, qualifier}) => {
+    if (qualifier) return;
     Object.entries(SEARCH_FIELD_WEIGHTS).forEach(([field, weight]) => {
       const set = fields.tokenSets[field];
       const exact = set.has(token);
       if (!exact && !set.has(stem)) return;
       /* Generic words count for little. An exact name match ("CARES") is
          judged by the word typed, not by its stem ("care"). */
-      const weak = lexicon.weakWords.has(token) || (!exact && lexicon.weakWords.has(stem));
+      const weak = weakToken || (!exact && weakStem);
       if (weak) { weakScore += weight; return; }
+      if (field !== "category" && serviceTerm) {
+        Object.entries(lexicon.categoryTerms).forEach(([category, termMap]) => { if (categoryTermStrength(termMap, token)) coveredNeeds.add(category); });
+      }
       const specificDescription = field === "description" && !serviceTerm;
       score += specificDescription && rare ? SEARCH_SPECIFIC_DESCRIPTION_WEIGHT : weight;
       if (field === "category") return;
@@ -779,11 +926,22 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
     conceptHit = true;
     if (concept.narrow && !otherService) narrowConceptHit = true;
     if (!otherService) specific = true;
-    if (concept.phrases.some(p => fields.name.includes(normalizeSearchText(p)))) score += 38;
-    else if (concept.phrases.some(p => fields.tags.includes(normalizeSearchText(p)))) score += 32;
-    else if (concept.phrases.some(p => fields.description.includes(normalizeSearchText(p)))) score += 22;
+    Object.keys(concept.categories).forEach(category => coveredNeeds.add(category));
+    if (concept.phrases.some(p => fields.name.includes(normalizedPhrase(p)))) score += 38;
+    else if (concept.phrases.some(p => fields.tags.includes(normalizedPhrase(p)))) score += 32;
+    else if (concept.phrases.some(p => fields.description.includes(normalizedPhrase(p)))) score += 22;
     else score += 8;
   });
+
+  /* Organization: the longest multi-word run of the query, containing a
+     distinctive word, found in this listing's name (2) or, as a documented
+     affiliation, its description (1). */
+  let organization = 0;
+  for (const phrase of analysis.organizationPhrases || []) {
+    const length = phrase.split(" ").length;
+    if (containsPhrase(fields.name, phrase)) { organization = 100 + length; break; }
+    if (!organization && containsPhrase(fields.description, phrase)) organization = length;
+  }
 
   let urgentHit = false;
   const urgentText = `${fields.name} ${fields.tags} ${fields.description} ${fields.requirements}`;
@@ -822,30 +980,64 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
   }
 
   return {resource, score, matchedTokens:[...matchedTokens], specific, hasContent, narrowConceptHit, rareSpecific,
+    organization, beneficiaryFit, coveredNeeds,
     categoryIntent:intentStrength > 0, weakOnly:!hasContent && !(intentStrength > 0) && weakScore > 0};
 }
 
-/* Content that shows a listing is specifically relevant to a detected
-   emergency — not merely in the Crisis category. */
+/* Content that shows a listing offers acute help for a detected emergency —
+   not merely that it is in the Crisis category or treats a related condition
+   ("opioid" treatment is routine care, not acute overdose response). */
 const EMERGENCY_EVIDENCE = {
-  "overdose": ["911", "naloxone", "narcan", "overdose", "opioid"],
+  "overdose": ["911", "naloxone", "narcan", "overdose"],
   "mental-crisis": ["988", "crisis line", "suicide", "mental health crisis", "crisis intervention"]
 };
 
 function emergencyEvidence(resource, kind) {
-  const text = normalizeSearchText(`${resource.name} ${(resource.tags || []).join(" ")} ${resource.description}`);
+  const text = normalizedResourceFields(resource).offer;
   return (EMERGENCY_EVIDENCE[kind] || []).some(term => containsPhrase(text, term));
 }
 
-/* Documented cost: "free" in the name, tags or description is no-cost
-   evidence; an explicit charge in the description or requirements is paid
-   evidence. Both, or neither, is unknown — never treated as free. A dollar
-   figure alone is not a charge ("Income under $60k" is a limit). */
-function documentedCost(resource) {
-  const offer = `${resource.name} ${(resource.tags || []).join(" ")} ${resource.description}`.toLowerCase();
-  const terms = `${resource.description} ${resource.requirements}`.toLowerCase();
-  const free = /\bfree\b|\bno cost\b|tuition-free|fare-free|fare free/.test(offer);
-  const paid = /\$\s?\d[\d.,]*\s*(?:\/|per\s)\s*(?:week|wk|month|mo|day|night)\b|\bcosts? \$\s?\d|\bpay equal share\b|\bself-pay\b|\bcash and credit\b/.test(terms);
+/* Documented cost of the REQUESTED service, decided conservatively:
+   - "free" counts only when it applies to a word naming that service, within
+     the same clause ("Free housing" for sober living, not "free meals");
+   - "smoke-free", "drug-free" and similar are not about price;
+   - a free consultation, assessment or screening says nothing about the
+     service's own cost;
+   - "not free" and explicit charges ("$100/week", "pay equal share",
+     self-pay) are paid evidence; a dollar figure alone is not
+     ("Income under $60k" is a limit);
+   - fare-free, tuition-free and free-of-charge describe the whole offer.
+   Free and paid together, or neither, is unknown — never shown or treated
+   as free. */
+const NON_COST_FREE = /\b(?:smoke|drug|alcohol|tobacco|nicotine|sugar|gluten|nut|scent|fragrance|latex|crime|violence|stress|worry|hands|barrier) free\b/g;
+const CONSULTATION_FREE = /\bfree (?:initial |first )?(?:consultation|consultations|assessment|assessments|screening|screenings|evaluation|evaluations|estimate|estimates|quote|quotes|referral|referrals)\b/g;
+const NEGATED_FREE = /\b(?:not|isnt|is not|arent|are not|no longer|never) free\b/;
+const WHOLE_OFFER_FREE = /\b(?:tuition free|fare free|cost free|fee free|free of charge)\b/;
+const EXPLICIT_CHARGE = /\$\s?\d[\d.,]*\s*(?:\/|per\s)\s*(?:week|wk|month|mo|day|night)\b|\bcosts? \$\s?\d|\brent (?:is|of) \$\s?\d|\bpay equal share\b|\bself-pay\b|\bcash and credit\b/;
+
+function documentedCost(resource, analysis) {
+  const requested = (analysis && analysis.requestedWords) || new Set();
+  const clauses = text => normalizeClauseText(text).replace(NON_COST_FREE, " ").replace(CONSULTATION_FREE, " ");
+  let offer = clauses(`${resource.name || ""} | ${(resource.tags || []).join(" | ")} | ${resource.description || ""}`);
+  const terms = clauses(`${resource.description || ""} | ${resource.requirements || ""}`);
+
+  let paid = EXPLICIT_CHARGE.test(`${resource.description || ""} ${resource.requirements || ""}`.toLowerCase());
+  if (NEGATED_FREE.test(offer) || NEGATED_FREE.test(terms)) paid = true;
+  offer = offer.replace(new RegExp(NEGATED_FREE.source, "g"), " ");
+
+  const names = word => requested.has(word) || requested.has(stemSearchWord(word));
+  let free = WHOLE_OFFER_FREE.test(offer);
+  const words = offer.split(" ");
+  words.forEach((word, i) => {
+    if (free) return;
+    if (word === "free") {
+      /* the service word follows within three words, same clause */
+      for (let j = i + 1; j <= i + 3 && j < words.length && words[j] !== "|"; j++) if (names(words[j])) free = true;
+    } else if (word === "cost" && words[i - 1] === "no") {
+      /* "<service> ... at no cost": the service word precedes, same clause */
+      for (let j = i - 2; j >= i - 6 && j >= 0 && words[j] !== "|"; j--) if (names(words[j])) free = true;
+    }
+  });
   return free && !paid ? "free" : paid && !free ? "paid" : "unknown";
 }
 
@@ -895,6 +1087,8 @@ function searchResources(resources, rawQuery, language = "en") {
   const anyContent = scored.some(item => item.hasContent);
 
   const filtered = scored.filter(item => {
+    /* An exact organization name, or a documented affiliation, is always shown. */
+    if (item.organization) return true;
     /* Listings that match only through generic words ("lost", "classes")
        are dropped once any listing matches the request itself. */
     if (item.weakOnly && anyContent) return false;
@@ -910,18 +1104,46 @@ function searchResources(resources, rawQuery, language = "en") {
     return item.score >= thresholdFor(item);
   });
 
-  /* Ordering. Listings with evidence for a detected emergency come first,
-     in guidance order (overdose, then mental-health crisis); everything else
-     follows by relevance, keeping each additional need. When no-cost help
-     is requested, each group lists documented-free help first and
-     explicitly paid programs last. */
+  /* Ordering, in explicit groups; within each group, relevance order.
+     1. Listings with acute evidence for a detected emergency, in guidance
+        order (overdose, then mental-health crisis). Cost never moves
+        anything above these.
+     2. Exact organization names, then documented affiliations (longest
+        matching name first) — a named organization beats generic intent.
+     3. When the query states two or more separate needs ("ride to the food
+        pantry"): listings serving all of them, then the best listing for
+        each need not yet shown, so every need appears early.
+     4. Everything else. Listings that fit a stated beneficiary ("for my
+        kids") come first; when no-cost help is asked for, documented-free
+        listings come before unknown and paid ones within the same tier of
+        relevance (specific matches before category-only matches). */
+  const needs = Object.entries(analysis.needScores || {})
+    .filter(([, strength]) => strength >= SEARCH_NEED_STRENGTH).map(([category]) => category);
+  let pool = filtered.slice();
+  const take = predicate => {
+    const picked = pool.filter(predicate);
+    pool = pool.filter(item => !predicate(item));
+    return picked;
+  };
+  const accepted = [];
+  urgentKinds.forEach((kind, k) => accepted.push(...take(item => evidenceFor(item) === k)));
+  accepted.push(...take(item => item.organization > 0).sort((a, b) => b.organization - a.organization || filtered.indexOf(a) - filtered.indexOf(b)));
+  if (needs.length >= 2) {
+    accepted.push(...take(item => needs.every(need => item.coveredNeeds.has(need))));
+    const bests = needs
+      .filter(need => !accepted.some(item => item.coveredNeeds.has(need)))
+      .map(need => pool.find(item => item.coveredNeeds.has(need)))
+      .filter((item, i, list) => item && list.indexOf(item) === i)
+      .sort((a, b) => filtered.indexOf(a) - filtered.indexOf(b));
+    accepted.push(...take(item => bests.includes(item)).sort((a, b) => filtered.indexOf(a) - filtered.indexOf(b)));
+  }
   const costRank = {free:0, unknown:1, paid:2};
-  const accepted = filtered.map((item, index) => {
-    const evidence = evidenceFor(item);
-    return {item, index,
-      emergency: evidence < 0 ? urgentKinds.length : evidence,
-      cost: analysis.wantsFree ? costRank[documentedCost(item.resource)] : 0};
-  }).sort((a, b) => a.emergency - b.emergency || a.cost - b.cost || a.index - b.index).map(entry => entry.item);
+  const fitting = (analysis.qualifierTokens || []).length > 0;
+  accepted.push(...pool.map((item, index) => ({item, index,
+    fit: fitting && item.beneficiaryFit ? 0 : 1,
+    tier: analysis.wantsFree ? (item.specific ? 0 : 1) : 0,
+    cost: analysis.wantsFree ? costRank[documentedCost(item.resource, analysis)] : 0
+  })).sort((a, b) => a.fit - b.fit || a.tier - b.tier || a.cost - b.cost || a.index - b.index).map(entry => entry.item));
 
   return {
     status:"ok",

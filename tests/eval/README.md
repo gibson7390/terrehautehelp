@@ -39,6 +39,7 @@ a passing run means these cases behave as expected, not that search is correct.
 | `ahead: [[id, cat]]` | `id` is returned and ranks above every result in category `cat` | recall / ranking |
 | `notAhead: [[id, cat]]` | If returned, `id` is not promoted above every `cat` result | precision |
 | `before: [[a, b]]` | `a` is returned and ranks before `b` (if `b` is returned) | recall / ranking |
+| `coverage: {cats, n}` | Each listed category has at least one result in the top `n` (useful early coverage of several needs, without naming organizations) | recall / ranking |
 
 Order is always asserted by resource ID, never by score values.
 | `not`, `notCat`, `notTop`, `notFirst` | Excluded IDs or categories | precision |
@@ -64,7 +65,7 @@ Order is always asserted by resource ID, never by score values.
 
 ## Holdout policy
 
-`holdout.js` holds phrasings that were deliberately kept out of tuning. `eval.html` does not load it: `eval.js` fetches it only when the page is opened with `?holdout=1`, so a default run never puts the reserved cases in the page.
+`holdout.js` holds phrasings that were deliberately kept out of tuning. `eval.html` does not load it: `eval.js` fetches it only when the page is opened with exactly `?holdout=1` (not `?holdout`, `?holdout=0` or `?holdout=true`), so a default run never puts the reserved cases in the page.
 - Don't run it while changing search code.
 - Don't copy its phrases into `cases.js` or the lexicon.
 - Once a change is final, run `eval.html?holdout=1` once and record the result in the review.

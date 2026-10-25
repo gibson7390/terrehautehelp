@@ -36,7 +36,7 @@ const expect = {
   urgentList: kinds => r => JSON.stringify(r.urgentAll) === JSON.stringify(kinds) ? null : `urgent guidance ${JSON.stringify(r.urgentAll)}, expected ${JSON.stringify(kinds)}`,
   firstOneOf: ids => r => ids.includes(r.ids[0]) ? null : `first result ${r.ids[0] || "(none)"}, expected one of ${ids.join(" ")}`,
   returned: id => r => r.ids.includes(id) ? null : `${id} not returned`,
-  someCategory: (cat, n = Infinity) => r => r.categories.slice(0, n).includes(cat) ? null : `no ${cat} result${n === Infinity ? "" : ` in top ${n}`}`,
+  someCategory: (cat, n = Infinity) => r => r.categories.slice(0, n).includes(cat) ? null : `no ${cat} result${n === Infinity ? "" : ` in top ${n}`} (${r.ids.slice(0, Math.min(n, 6)).join(" ")})`,
   anyReturned: ids => r => ids.some(id => r.ids.includes(id)) ? null : `none of ${ids.join(" ")} returned`,
   /* Relative order by resource ID, never by score. */
   aheadOfCategory: (id, cat) => r => {
@@ -215,6 +215,52 @@ const CASES = [
     expect.before("recovery-010", "recovery-002"), expect.before("recovery-010", "recovery-004")
   ]],
 
+  /* Third review: clause boundaries. A benign span excludes only itself. */
+  ["I cut myself. A piece of me wants to die", mentalCrisis],
+  ["i keep cutting myself a piece of me dies every time", mentalCrisis],
+  ["I burned myself cooking. I want to die", mentalCrisis],
+  ["I want to die. I burned myself cooking", mentalCrisis],
+  ["i cut myself shaving. i cut myself on purpose", mentalCrisis],
+  ["i cut myself on purpose, i also cut myself shaving", mentalCrisis],
+  ["I want to end it. With my boyfriend gone there is no reason to live", mentalCrisis],
+  ["i want to end it with my boyfriend; i want to end my life", mentalCrisis],
+  ["I cut myself shaving!!!", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["cutting myself a piece of cake, then cutting myself a piece of pie", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i want to end it with my boyfriend.", [expect.urgent(null), expect.absent("crisis-001")]],
+
+  /* "opioid" alone is not acute-emergency evidence; cost never outranks acute help */
+  ["someone overdosed and need food pantry", [
+    expect.urgent(OVERDOSE), expect.first("crisis-004"), expect.notAheadOfCategory("recovery-014", "food")
+  ]],
+  ["someone overdosed need free help", [expect.urgent(OVERDOSE), expect.first("crisis-004")]],
+
+  /* Separate needs vs qualifiers */
+  ["ride to the food pantry", [
+    expect.inTop("transport-004", 3), expect.someCategory("transportation", 3), expect.someCategory("food", 3)
+  ]],
+  ["food for my kids", [
+    expect.anyReturned(["food-005","food-004"]), r => ["food-005","food-004"].some(id => r.ids.slice(0, 5).includes(id)) ? null : "no child-focused food help in top 5",
+    expect.absent("children-009"), expect.absent("children-002"), expect.absent("children-003"),
+    expect.absent("children-010"), expect.absent("children-001")
+  ]],
+  ["kids", [expect.categoryCount("children", 5)]],
+  ["need food and shelter tonight", [expect.someCategory("food", 4), expect.someCategory("housing", 4)]],
+
+  /* Organization names and documented affiliations */
+  ["Mental Health America", [r => ["health-005","financial-016"].every(id => r.ids.slice(0, 2).includes(id)) ? null : `top 2 are ${r.ids.slice(0, 2).join(" ")}`]],
+  ["Hamilton Center", [r => {
+    const hamilton = ["health-001","crisis-001","crisis-008","financial-006","employment-003","children-005","recovery-013"];
+    const off = r.ids.slice(0, 5).filter(id => !hamilton.includes(id));
+    return off.length ? `non-Hamilton listings in top 5: ${off.join(" ")}` : null;
+  }]],
+  ["Wabash Valley Health Center", [expect.first("health-007")]],
+
+  /* Conservative spelling repairs */
+  ["veternarian", [expect.first("pet-002")]],
+  ["rentle assistance", [expect.firstOneOf(["housing-004","housing-003"]), expect.topCategories(["housing"], 2)]],
+  ["pre school", [expect.first("education-002")]],
+  ["free compter", [expect.first("digital-001")]],
+
   /* Gas cards / vouchers are one service across categories */
   ["gas voucher", [expect.first("transport-005"), expect.returned("employment-006"), expect.noCategory("housing")]],
   ["gas card", [expect.returned("transport-005"), expect.returned("employment-006")]],
@@ -244,6 +290,36 @@ function runSuite() {
   const urlOk = !/href="\s*javascript:/i.test(unsafe) && safe.includes('href="https://example.org/x"');
   rows.push({query:"(renderCard allows only http/https website links)", result:{ids:[], urgent:null}, failures: urlOk ? [] : ["unsafe URL scheme rendered as a link"]});
   if (!urlOk) failed++;
+
+  /* Documented cost must be specific to the requested service. Synthetic
+     listings; the real dataset is unchanged. */
+  const costQuery = analyzeSearchQuery("free sober living", "en", RESOURCES);
+  const costCases = [
+    [{name:"Test Sober House", description:"Smoke-free and drug-free sober living home.", requirements:"Rent is $120/week."}, "paid"],
+    [{name:"Test Sober House", description:"Smoke-free, drug-free sober living home.", requirements:""}, "unknown"],
+    [{name:"Test Placement", description:"Free consultation for sober living placement.", requirements:""}, "unknown"],
+    [{name:"Test Sober House", description:"Sober living with free meals.", requirements:"$150/week program fee."}, "paid"],
+    [{name:"Test Sober House", description:"Sober living home. Not free; residents share expenses.", requirements:""}, "paid"],
+    [{name:"Free Recovery Housing", description:"Free housing with recovery support.", requirements:""}, "free"],
+    [{name:"Test Sober House", description:"Sober living. Free meals and transportation provided.", requirements:""}, "unknown"]
+  ];
+  costCases.forEach(([listing, expected]) => {
+    let got;
+    try { got = documentedCost({tags:[], ...listing}, costQuery); } catch (err) { got = `error: ${err.message}`; }
+    const ok = got === expected;
+    rows.push({query:`(cost: "${listing.description}" / "${listing.requirements}")`, result:{ids:[], urgent:null}, failures: ok ? [] : [`documented cost ${got}, expected ${expected}`]});
+    if (!ok) failed++;
+  });
+
+  /* Search speed: the UI runs searchResources on every query. Budget is
+     generous for desktop browsers; slow hardware may need more. */
+  const perfQueries = ["food", "someone overdosed and i want to die and i need food pantry", "free sober living",
+    "i need a computer to apply for jobs", "Hamilton Center", "zxqv blorpt", "ride to the food pantry", "homles"];
+  const started = performance.now();
+  perfQueries.forEach(q => searchResources(RESOURCES, q, "en"));
+  const average = (performance.now() - started) / perfQueries.length;
+  rows.push({query:`(average search time ${average.toFixed(1)} ms; budget 50 ms)`, result:{ids:[], urgent:null}, failures: average <= 50 ? [] : ["search too slow"]});
+  if (average > 50) failed++;
 
   /* Eligibility stays visible on a cross-category match. */
   const gasCard = renderCard(RESOURCES.find(r => r.id === "employment-006"));

@@ -67,6 +67,10 @@ function evalCheck(c, r) {
     if (pa < 0) fail("recall", `${a} not returned`);
     else if (pb >= 0 && pa > pb) fail("ranking", `${a} at #${pa + 1} is not before ${b} at #${pb + 1}`);
   });
+  if (e.coverage) {
+    e.coverage.cats.filter(cat => !r.cats.slice(0, e.coverage.n).includes(cat))
+      .forEach(cat => fail(r.cats.includes(cat) ? "ranking" : "recall", `no ${cat} result in top ${e.coverage.n} (${top(e.coverage.n)})`));
+  }
   (e.needs || []).forEach(group => {
     if (!group.some(id => pos(id) >= 0)) fail("recall", `no result for need ${group.join("/")}`);
   });
@@ -116,6 +120,7 @@ function evalDescribe(e) {
   if (e.top) parts.push(`top ${e.n || 5}: ${e.top.join(" ")}`);
   if (e.any) parts.push(`one of ${e.any.join(" ")} in top ${e.an || 3}`);
   if (e.has) parts.push(`includes ${e.has.join(" ")}`);
+  if (e.coverage) parts.push(`each of ${e.coverage.cats.join(", ")} in top ${e.coverage.n}`);
   if (e.needs) parts.push(`one result per need: ${e.needs.map(g => g.join("/")).join(" + ")}`);
   if (e.urgentAll) parts.push(`guidance cards: ${e.urgentAll.join(", ") || "none"}`);
   if (e.ahead) parts.push(e.ahead.map(([id, cat]) => `${id} ahead of all ${cat}`).join("; "));
@@ -156,17 +161,25 @@ function evalLoadHoldout() {
   });
 }
 
-function evalSuite(holdout) {
+/* Runs in batches and yields between them, so a visible browser tab stays
+   responsive during the ~1,250 searches instead of blocking for a minute. */
+async function evalSuite(holdout) {
   const includeHoldout = !!holdout;
   const written = EVAL_CASES;
   const variants = buildEvalVariants(written);
   const all = [...written, ...variants, ...(holdout || [])];
   const authoringErrors = evalValidate(all);
-  const rows = all.map(c => {
-    const r = evalRun(c.query);
-    const failures = evalCheck(c, r);
-    return {...c, result:r, failures, ...evalClassify(c, failures)};
-  });
+  const rows = [];
+  const summary = document.getElementById("summary");
+  for (let i = 0; i < all.length; i += 40) {
+    all.slice(i, i + 40).forEach(c => {
+      const r = evalRun(c.query);
+      const failures = evalCheck(c, r);
+      rows.push({...c, result:r, failures, ...evalClassify(c, failures)});
+    });
+    if (summary) summary.textContent = `Running… ${rows.length} of ${all.length}`;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
   return {rows, authoringErrors, includeHoldout, holdoutSize:holdout ? holdout.length : null};
 }
 
@@ -199,8 +212,9 @@ function evalSummaries(rows) {
 }
 
 async function evalRender() {
-  const holdout = new URLSearchParams(location.search).has("holdout") ? await evalLoadHoldout() : null;
-  const suite = evalSuite(holdout);
+  /* Exactly ?holdout=1 — not ?holdout, ?holdout=0 or ?holdout=true. */
+  const holdout = new URLSearchParams(location.search).get("holdout") === "1" ? await evalLoadHoldout() : null;
+  const suite = await evalSuite(holdout);
   const {rows} = suite;
   const {bySet, byGroup, byType} = evalSummaries(rows);
   const fails = rows.filter(r => r.outcome === "fail")

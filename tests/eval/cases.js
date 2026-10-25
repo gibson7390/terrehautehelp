@@ -94,7 +94,8 @@ const EVAL_CASES = (() => {
   housing("misspell", "shleter", {top:["housing-001","housing-002"], n:3});
   housing("misspell", "homles", {any:["housing-002","housing-001","housing-006"]});
   housing("misspell", "evection", {any:["housing-004","legal-004"], an:5}, {review:"distance 1 from 'election'-like words; not a known vocabulary word"});
-  housing("misspell", "rentle assistance", {first:"housing-004"});
+  /* Corrected (third review): aligned with the correctly spelled "rental assistance" case, which accepts either listing tagged "rental assistance". */
+  housing("misspell", "rentle assistance", {first:["housing-004","housing-003"]});
   housing("misspell", "sectoin 8", {first:"housing-003"});
   housing("org", "Bethany House", {first:"housing-001"});
   housing("org", "Light House Mission", {top:["housing-002","food-006"], n:2});
@@ -605,7 +606,9 @@ const EVAL_CASES = (() => {
   multi("multi", "no insurance need medicine", {any:["financial-016","health-002","health-009"], has:["financial-016"]});
   multi("multi", "just got out of jail need work", {any:["employment-002","employment-003","employment-012"], an:3});
   multi("multi", "homeless veteran", {any:["financial-012","health-006","housing-002"]}, {review:"no veteran-specific shelter"});
-  multi("multi", "need food and shelter tonight", {top:["housing-002","food-006"], n:4});
+  /* Corrected (third review): the earlier expectation required two specific Light House listings in the top 4.
+     The need is useful early coverage of both food and shelter, not particular organizations. */
+  multi("multi", "need food and shelter tonight", {coverage:{cats:["food","housing"], n:4}});
   multi("multi", "need help with rent and utilities", {first:"housing-004"});
   multi("multi", "sober living that takes kids", {any:["recovery-007","recovery-011"]});
   multi("multi", "ride to the food pantry", {first:"transport-004"});
@@ -616,7 +619,8 @@ const EVAL_CASES = (() => {
   multi("multi", "need diapers and formula", {top:["financial-004","children-007"], n:4});
   multi("multi", "out of jail need id and a job", {any:["employment-008","employment-002","employment-003"]});
   multi("multi", "help paying funeral and rent", {any:["financial-002","financial-008"], an:2});
-  multi("multi", "senior needs ride to doctor", {first:"transport-003"});
+  multi("multi", "senior needs ride to doctor", {first:"transport-003"},
+    {review:"transport-003 serves seniors (any destination); transport-002 serves rides to doctor appointments but requires Medicaid. The data supports either first."});
   multi("multi", "detox and then sober living", {has:["recovery-015"], cats:{in:["recovery"], n:3}});
   multi("multi", "veteran behind on utilities", {first:"financial-012"});
   multi("multi", "my children od and need shelter and transportation",
