@@ -65,6 +65,12 @@ const expect = {
     const missing = searchResources(RESOURCES, query, "en").results.slice(0, n).map(x => x.id).filter(id => !r.ids.includes(id));
     return missing.length ? `missing ${missing.join(" ")} from the top ${n} of "${query}"` : null;
   },
+  anyInTop: (ids, n) => r => ids.some(id => r.ids.slice(0, n).includes(id)) ? null : `none of ${ids.join(" ")} in top ${n} (${r.ids.slice(0, n).join(" ") || "no results"})`,
+  categoryBefore: (a, b) => r => {
+    const pa = r.categories.indexOf(a), pb = r.categories.indexOf(b);
+    if (pa < 0) return `no ${a} result`;
+    return pb < 0 || pa < pb ? null : `first ${b} result (#${pb + 1}) ranks above first ${a} result (#${pa + 1})`;
+  },
   categoryCount: (cat, min) => r => r.categories.filter(c => c === cat).length >= min ? null : `only ${r.categories.filter(c => c === cat).length} ${cat} results, expected at least ${min}`,
   status: s => r => r.status === s ? null : `status ${r.status}, expected ${s}`
 };
@@ -385,6 +391,59 @@ const CASES = [
   ]],
   /* A crisis phrase alone still excludes its ordinary words ("safe at home" ≠ in-home care) */
   ["i dont feel safe at home", [expect.first("crisis-002"), expect.absent("senior-003")]],
+
+  /* First holdout run (now regression): typo correction keeps ordinary
+     words. Negatives across unrelated categories... */
+  ["he put his hands on me again", [expect.firstOneOf(["crisis-002","children-006","legal-006"]), expect.returned("housing-001"), expect.noCategory("pet")]],
+  ["need to print some papers", [expect.first("digital-001"), expect.absent("children-005")]],
+  ["get rid of bed bugs", [expect.noCategory("transportation")]],
+  ["i just need to rant", [expect.noCategory("housing"), expect.noCategory("financial")]],
+  ["my shopping cart broke", [expect.noCategory("transportation")]],
+  ["the pot is broken", [expect.noCategory("pet")]],
+  ["can you put me in touch with someone", [expect.noCategory("pet")]],
+  /* ...while established, unambiguous typo support still works */
+  ["fud", [expect.topCategories(["food"], 3)]],
+  ["fod pantrey", [expect.topCategories(["food"], 3)]],
+  ["shleter", [expect.topCategories(["housing"], 3)]],
+  ["docter", [expect.topCategories(["health"], 3)]],
+  ["preshool", [expect.first("education-002")]],
+  ["sobor living", [expect.topCategories(["recovery"], 3)]],
+  ["dentel", [expect.first("health-007")]],
+
+  /* Disclosed abuse, paired with ordinary "hands" wording */
+  ["she put her hands on my kids", [expect.firstOneOf(["crisis-002","children-006"]), expect.noCategory("pet")]],
+  ["he put his hands on the table", [expect.urgent(null), expect.absent("crisis-002")]],
+  ["hands on job training", [expect.absent("crisis-002")]],
+  /* Indirect distress: support offered (988 card), not an emergency claim */
+  ["i dont see the point in going on", [expect.urgentList([MENTAL]), expect.first("crisis-001")]],
+  ["thinking of ending things", [expect.urgentList([MENTAL]), expect.first("crisis-001")]],
+  ["thinking of ending things with my girlfriend", [expect.urgent(null), expect.absent("crisis-001")]],
+  ["i dont see the point in going on this trip", [expect.urgent(null)]],
+  ["i dont see the point in going on. i need food", [expect.urgentList([MENTAL]), expect.someCategory("food")]],
+  /* Unresponsive person: general emergency guidance; no overdose inferred */
+  ["my roommate isnt waking up after using", [expect.urgentList([EMERGENCY]), expect.noCategory("food"), expect.noCategory("education")]],
+  ["he is unresponsive", [expect.urgentList([EMERGENCY])]],
+  ["i cant wake him up", [expect.urgentList([EMERGENCY])]],
+  ["my son wont wake up for school", [expect.urgent(null)]],
+  ["i cant wake up early", [expect.urgent(null)]],
+  /* Intentional ingestion: emergency guidance, plus crisis support because
+     the wording states intent; no overdose card */
+  ["i took a bunch of my pills on purpose", [expect.urgentList([EMERGENCY, MENTAL]), expect.noCategory("food")]],
+  ["she swallowed a whole bottle of pills", [expect.urgentList([EMERGENCY])]],
+  ["i took a bunch of my pills on purpose. i need food", [expect.urgentList([EMERGENCY, MENTAL]), expect.someCategory("food")]],
+  ["i take a bunch of pills every day", [expect.urgent(null)]],
+  ["i took my pills on time", [expect.urgent(null)]],
+  ["i did not take a bunch of pills", [expect.urgent(null)]],
+
+  /* Retrieval where the dataset offers the service */
+  ["cant afford to bury my brother", [expect.anyInTop(["financial-008","financial-002"], 2)]],
+  ["fridge is empty", [expect.topCategories(["food"], 3)]],
+  ["my gums are bleeding", [expect.inTop("health-007", 3)]],
+  ["anxiety is really bad", [expect.anyInTop(["health-001","health-004","health-005","crisis-001"], 3)]],
+  ["out of kibble for my pup", [expect.first("pet-001")]],
+  ["been using and want to stop", [expect.topCategories(["recovery","health","crisis"], 3), expect.noCategory("senior")]],
+  ["safe deposit box", [expect.noCategory("food")]],
+  ["need my blood pressure checked for free", [expect.firstCategory("health"), expect.categoryBefore("health", "housing")]],
 
   /* Restored cost negation */
   ["sober living no need for it to be free", [expect.sameOrderAs("sober living")]],

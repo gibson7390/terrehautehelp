@@ -41,6 +41,65 @@ const CATEGORY_META = {
   other:         {label:"Other Resources",    icon:SVG.other,         badge:"badge-other",         bar:"bar-other"},
 };
 
+/* General vocabulary of frequent English words. A word a person typed that
+   is a real word is searched as typed, never "corrected" into a service
+   word one letter away ("put" is not "pet", "rid" is not "ride", "rant" is
+   not "rent"). This is general language knowledge, not a list of search
+   failures; misspellings such as "fud" or "shleter" are deliberately
+   absent so established typo support keeps working. */
+const COMMON_ENGLISH_WORDS = new Set((
+  "a able about above across act actually add after again against age ago agree ahead air all allow almost alone along " +
+  "bug pest mouse mice roach spider wallet purse roommate neighbor tooth teeth " +
+  "already also although always am among amount an and angry animal another answer any anymore anyone anything anyway " +
+  "anywhere apart apply area arm around arrive art as ask asked asking at aunt away awful baby back bad badly bag ball " +
+  "bank bar base basic bath be bear beat beautiful became because become bed been before began begin behind being " +
+  "believe below belt bend beside best bet better between big bike bit bite black blame blank blind block blood blow " +
+  "blue board boat body bone book boot born borrow boss both bother bottle bottom bought bowl box boy brain branch " +
+  "brave bread break breath bring broke broken brother brought brown bud build building built bunch burn burnt burst " +
+  "busy but buy by cake call called calm came can cap car card careful carry cart case cat catch caught cause cent " +
+  "certain chair chance change charge cheap check cheese chest chicken chief child choice choose chose church city " +
+  "class clean clear climb close closed clothes cloud coat cold collect color come comfort coming common cook cool " +
+  "copy corner cost cot couch could count country couple course cousin cover crazy cried cross crowd cry cup cut " +
+  "dad damage dark date daughter day dead deal dear death decide deep deposit desk did die died different dig dinner " +
+  "direction dirt dirty dish do doing done door double down draw dream dress drink drive driver drop dry due dull " +
+  "during dust duty each ear early earn easy eat edge egg either else empty end enemy enjoy enough enter even evening " +
+  "event ever every everyone everything exact except excuse expect explain eye face fact fail fair fall false family " +
+  "far farm fast fat father fault fear feel feeling feet fell felt few field fight figure fill final finally find fine " +
+  "finger finish fire first fish fit five fix flat floor flower fly fold follow food foot for force forget forgot " +
+  "form forward found four free fresh friend fridge from front fruit full fun funny game garden gas gate gave get gift " +
+  "girl give given glad glass go goes going gold gone good got grab grade grass gray great green grew ground group " +
+  "grow guess guy had hair half hall hand hands hang happen happy hard harm hat hate have he head hear heard heart " +
+  "heat heavy held hello help her here hers herself hide high hill him himself hip his hit hold hole holiday home " +
+  "hope horse hot hour house how however huge hung hunt hurry hurt husband ice idea if ill important in inch inside " +
+  "instead into iron is it its itself job join joke jump just keep kept key kick kid kill kind king kiss kitchen knee " +
+  "knew knife knock know known lady laid lake land large last late later laugh law lay lazy lead learn least leave " +
+  "led left leg lend less let letter level lie life lift light like line list listen little live lives living lock " +
+  "long look loose lose loss lost lot loud love low lunch mad made mail main make man many map mark market mat " +
+  "matter may maybe me meal mean meant meat meet men met middle might mile milk mind mine minute miss mistake mix mom " +
+  "money month mood more morning most mother mouth move much mud must my myself nail name near neck need neighbor " +
+  "neither nervous never new news next nice night nine no nobody noise none nor nose not note nothing notice now " +
+  "number nurse of off offer office often oh oil ok okay old on once one only open or order other our out outside " +
+  "over own page paid pain paint pair pan paper papers parent park part party pass past pat path pay peace pen " +
+  "people perhaps person phone pick picture piece pile pin pink pit place plain plan plant plate play please pocket " +
+  "point police pool poor pot pound pour power press pretty price print problem promise pull push put quick quiet " +
+  "quit quite race rain raise ran rant rat rather reach read ready real really reason red remember rent rest rich " +
+  "rid ride right ring rise road rock roll roof room root rope rose round row rub rule run rush sad safe said sale " +
+  "salt same sand sat save saw say school sea seat second see seem seen sell send sense sent serious set seven several " +
+  "shake shall shape share sharp she sheet shirt shoe shoes shop short should shoulder shout show shut sick side sign " +
+  "silly simple since sing sir sister sit six size skin sky sleep slip slow small smell smile smoke snow so soap soft " +
+  "some someone something sometimes son song soon sore sorry sort sound soup south space speak spend spent spoke spot " +
+  "stand star start state stay steal step stick still stone stood stop store storm story straight strange street " +
+  "strong stuck study stuff stupid such sudden sugar suit sun sure surprise sweet swim table tail take taken talk " +
+  "tall tap taste tax tea teach team tear tell ten test than thank that the their them then there these they thick " +
+  "thin thing things think third this those though thought three threw through throw tie tight time tin tiny tip " +
+  "tire tired to today toe together told tomorrow tone tonight too took top total touch toward town toy track trade " +
+  "train trash travel tree trip trouble truck true trust truth try turn twice two type ugly uncle under until up upon " +
+  "upset us use used using usual very visit voice wait wake walk wall want war warm was wash waste watch water wave way " +
+  "we wear weather week weird well went were wet what wheel when where which while white who whole why wide wife " +
+  "wild will win wind window winter wish with without woke woman women won wood word wore work world worry worse worst " +
+  "worth would write wrong yard yeah year yell yes yesterday yet you young your yours yourself"
+).split(" "));
+
 /* "feed <whose> <who>" phrases. What is being fed decides the service:
    animals → pet food; people → food assistance. */
 const FEEDING_PHRASES = (() => {
@@ -70,7 +129,7 @@ const SEARCH_LEXICONS = {
       "get","gets","getting","got","have","has","had","there","here","somewhere","anywhere","right","now",
       "today","local","nearby","terre","haute","indiana","vigo","county",
       "ned","nead","plz","pls",
-      "not","dont","doesnt","didnt","isnt","arent","wont"
+      "not","dont","doesnt","didnt","isnt","arent","wont","after","before"
     ]),
 
     /* Ordinary words that typo correction must never rewrite. Each is a real
@@ -102,7 +161,19 @@ const SEARCH_LEXICONS = {
       ]},
       {signal:"selfharm", urgent:"mental-crisis", tokens:["selfharm"], patterns:[
         /\bself ?harm(?:ing|s|ed|er)?\b/,
-        /\b(?:cut|cuts|cutting|hurt|hurting|harm|harming|burn|burning|burned) (?:my ?self|me self)\b/
+        /\b(?:cut|cuts|cutting|hurt|hurting|harm|harming|burn|burning|burned) (?:my ?self|me self)\b/,
+        /* An ingestion the wording itself says was intentional. */
+        /\b(?:took|taken|swallowed|ate|downed)(?: [a-z]+){0,5} (?:pills|meds|tablets|capsules|medicine|medication) (?:on purpose|intentionally|to hurt my ?self|to kill my ?self|to die|to end it)\b/
+      ]},
+      /* Indirect distress. The existing 988 card offers support ("Need
+         immediate mental health crisis support?") without claiming an
+         emergency. Each phrase must end its clause, so "...going on this
+         trip" is not distress; "ending things with my girlfriend" is
+         excluded as a relationship ending (benignContexts). */
+      {signal:"distress", urgent:"mental-crisis", tokens:["suicide"], patterns:[
+        /\b(?:dont|do not|cant|cannot|can not|no longer) see (?:the |any )?point (?:in|of) (?:going on|living|life|anything)(?= \||$| anymore\b)/,
+        /\b(?:no|not any) (?:point|reason) (?:in |to )?(?:living|going on|keep going)(?= \||$| anymore\b)/,
+        /\b(?:thinking|thought|think) (?:of|about) ending (?:things|it all|everything|it)(?= \||$)/
       ]},
       {signal:"overdose", urgent:"overdose", tokens:["overdose"], patterns:[
         /\boverdos(?:e|ed|es|ing)\b/,
@@ -127,7 +198,21 @@ const SEARCH_LEXICONS = {
            wording ("is taking too many pills and cant keep track") is not. */
         /\b(?:saw|seen|see|watched|watch|watching|caught|found|noticed) (?:her|him|them|someone|somebody|my \w+) (?:take|taking|took|swallow|swallowing|swallowed|eat|eating|ate) (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds))\b/,
         /\b(?:is|are|am|s|was|were|keeps|kept) (?:swallowing|eating) (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds))\b/,
-        /\b(?:is|are|am|s|was|were) taking (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds)) (?:right now|now|at this moment|as we speak|tonight)\b/
+        /\b(?:is|are|am|s|was|were) taking (?:way )?(?:too many (?:pills|meds|tablets|capsules)|too much (?:medicine|medication|meds)) (?:right now|now|at this moment|as we speak|tonight)\b/,
+        /* Large quantities taken at once. */
+        /\b(?:took|taken|swallowed|ate|downed) (?:a bunch of|a handful of|a whole bottle of|the whole bottle of|a bottle of) (?:my |her |his |their |the |these |those )?(?:pills|meds|tablets|capsules|medicine|medication)\b/,
+        /* A person who cannot be woken or does not respond. Routine wording
+           ("wont wake up for school", "cant wake up early") is excluded. */
+        /\b(?:he|she|they|someone|somebody|my \w+)(?: is| s| was)? (?:not|isnt|wasnt|wont|will not|cant|cannot|can not) (?:waking up|wake up|be woken|respond|responding)\b(?! (?:for|in|early|on|at|before|until|till|when)\b)/,
+        /\b(?:cant|cannot|can not|couldnt|could not) wake (?:him|her|them|my \w+|someone|somebody)(?: up)?\b(?! (?:for|in|early|on|at|before|until|till|when)\b)/,
+        /\b(?:he|she|they|someone|somebody|my \w+) (?:is|s|was|went|seems) unresponsive\b/
+      ]},
+      /* Wanting to stop substance use: recovery services, no guidance card.
+         "been using" alone is ambiguous ("been using the bus"), so it counts
+         only with a stated wish to stop. */
+      {signal:"recovery", urgent:null, tokens:["recovery","substance"], patterns:[
+        /\b(?:been|keep|kept|still) using(?: drugs| again)?(?: and| but)(?: i)? (?:want|need|wanna|trying|try|have) to (?:stop|quit)\b/,
+        /\b(?:stop|quit|stopped|quitting|stopping) using\b/
       ]},
       {signal:"domestic violence", urgent:null, tokens:["domestic","violence"], patterns:[
         /\b(?:boyfriend|girlfriend|husband|wife|partner|spouse|ex|fiance|dad|father|stepdad|stepfather|mom|mother|he|she|they)(?: keeps| is| always| has been| has| just| will| still)? (?:hit|hits|hitting|beat|beats|beating|choke|chokes|choked|choking|strangled|abuse|abuses|abused|abusing|threaten|threatens|threatened|threatening|hurt|hurts|hurting|kicks|kicked|rapes|raped) (?:me|us|my (?:kids|children|son|daughter|baby))\b(?! up\b(?! against\b))/,
@@ -135,6 +220,7 @@ const SEARCH_LEXICONS = {
         /\bunsafe (?:at|in) (?:my )?(?:home|house|apartment)\b/,
         /\b(?:scared|afraid) (?:of my|to go) (?:boyfriend|girlfriend|husband|wife|partner|ex|home)\b/,
         /\babusive (?:boyfriend|girlfriend|husband|wife|partner|relationship|home|ex)\b/,
+        /\b(?:he|she|they|my \w+)(?: keeps| keep| always| just| again)? (?:put|puts|putting|laid|lays|laying) (?:his|her|their) hands on (?:me|us|my (?:kids|children|son|daughter|baby))\b/,
         /\b(?:leaving|left|escape|escaping|fleeing|away from) (?:my |an |the )?(?:abuser|abuse|abusive (?:home|relationship|partner|husband|wife|boyfriend|girlfriend))\b/
       ]}
     ],
@@ -159,7 +245,9 @@ const SEARCH_LEXICONS = {
       /\b(?:not|isnt|is not|wasnt|was not) breathing (?:so |as |too |very )?(?:hard|heavily|heavy|fast|quickly|rapidly|deeply|loudly)(?: (?:anymore|after (?:exercise|exercising|working out|a workout|running|the gym)))?\b/,
       /* A denial of the ingestion itself ("i did not take too many pills",
          "i never took too many pills"). */
-      /\b(?:did not|didnt|never|have not|havent|has not|hasnt|had not|hadnt) (?:take|took|taken|swallow|swallowed|eat|ate|eaten|drink|drank|have|had) (?:too many|way too many|too much|way too much) (?:pills|meds|tablets|capsules|medicine|medication)\b/,
+      /\b(?:did not|didnt|never|have not|havent|has not|hasnt|had not|hadnt) (?:take|took|taken|swallow|swallowed|eat|ate|eaten|drink|drank|have|had) (?:too many|way too many|too much|way too much|a bunch of|a handful of|a whole bottle of|the whole bottle of) (?:my |her |his |the )?(?:pills|meds|tablets|capsules|medicine|medication)\b/,
+      /* Organisations, not people, being unresponsive */
+      /\bmy (?:landlord|caseworker|case worker|lawyer|attorney|office|boss|manager|property manager|insurance|doctors office) (?:is|s|was|has been) (?:unresponsive|not responding)\b/,
       /\b(?:did not|didnt|never) (?:see|saw|watch|watched|notice|noticed) (?:her|him|them|someone|somebody) (?:take|took|swallow|swallowed|eat|ate) (?:way )?(?:too many|too much) (?:pills|meds|tablets|capsules|medicine|medication)\b/,
       /\b(?:end|ending|ended) (?:it|things|the relationship|our relationship|my relationship) with (?:my (?:boyfriend|girlfriend|husband|wife|partner|ex|fiance|fiancee|bf|gf)|him|her|them)\b/
     ],
@@ -181,7 +269,8 @@ const SEARCH_LEXICONS = {
         health:2.2, healthcare:2.4, medical:2.2, doctor:2.3, clinic:2.3, hospital:2.0,
         dental:2.2, dentist:2.3, prescription:2.0, prescriptions:2.0, medicine:1.8,
         medication:1.8, medications:1.8, medicaid:2.0, insurance:1.6, uninsured:2.0,
-        vision:1.8, eye:1.6, glasses:1.5, hearing:1.8, audiology:1.8, mental:1.2
+        vision:1.8, eye:1.6, glasses:1.5, hearing:1.8, audiology:1.8, mental:1.2,
+        anxiety:2.0, anxious:1.8, depression:2.0, depressed:2.0
       },
       crisis: {
         crisis:2.8, emergency:2.8, suicide:3.2, suicidal:3.2, selfharm:3.2, abuse:2.6,
@@ -199,7 +288,7 @@ const SEARCH_LEXICONS = {
         eviction:1.6, evicted:1.6, landlord:1.6, tenant:1.6
       },
       financial: {
-        financial:2.4, money:1.8, bill:1.7, bills:1.7, benefits:1.8, debt:1.8,
+        financial:2.4, money:1.8, bill:1.7, bills:1.7, benefits:1.8, debt:1.8, burial:1.8, funeral:1.8,
         assistance:1.1, cash:1.5, income:1.5, pay:1.5, paying:1.5, utility:1.5,
         utilities:1.5, rent:1.2, rental:1.0
       },
@@ -223,7 +312,8 @@ const SEARCH_LEXICONS = {
       },
       pet: {
         pet:2.5, pets:2.5, dog:2.3, dogs:2.3, cat:2.3, cats:2.3, animal:2.1,
-        animals:2.1, vet:2.5, veterinary:2.5, veterinarian:2.5, spay:2.2, neuter:2.2
+        animals:2.1, vet:2.5, veterinary:2.5, veterinarian:2.5, spay:2.2, neuter:2.2,
+        pup:2.3, puppy:2.3, kitten:2.3, kibble:2.5
       },
       immigration: {
         immigration:2.7, immigrant:2.5, immigrants:2.5, refugee:2.5, refugees:2.5,
@@ -252,7 +342,15 @@ const SEARCH_LEXICONS = {
       abuser:["abuse"], abusive:["abuse"], psychiatrist:["psychiatry","psychiatric"],
       power:["utility","utilities"], eat:["meals"], busses:["bus"],
       daycare:["childcare"], evicted:["eviction"], uti:["utis"], addicted:["addiction"], addict:["addiction"],
-      meth:["drug","substance"]
+      meth:["drug","substance"],
+      /* First holdout run (now regression). Each maps to the dataset's own
+         service wording: Burial Assistance / trustees ("burial", "funeral");
+         Wabash Valley Health Center ("dental"); Hamilton Center, Centerstone,
+         MHA ("mental health"); Humane Society Pet Food Pantry ("pet food"). */
+      bury:["burial","funeral"], buried:["burial","funeral"], burying:["burial","funeral"],
+      gum:["dental"], gums:["dental"],
+      anxiety:["mental","health"], anxious:["mental","health"], depression:["mental","health"], depressed:["mental","health"],
+      kibble:["pet","food"], pup:["dog"], puppy:["dog"]
     },
 
     /* Generic words that describe almost every listing. They still match, at
@@ -262,7 +360,9 @@ const SEARCH_LEXICONS = {
       "free","low","cost","service","services","program","programs","support","care","resource","resources",
       "class","classes","lost",
       /* "take" describes almost anything ("take-home boxes"); it is not a request */
-      "take","takes","taking","took","taken"
+      "take","takes","taking","took","taken",
+      /* packaging, not a service ("safe deposit box" is not "take-home boxes") */
+      "box","boxes"
     ]),
 
     /* Broad words for each category. A request using one of these is
@@ -316,6 +416,15 @@ const SEARCH_LEXICONS = {
       {phrases:["utility assistance","utility bill","utility bills","light bill","power bill","electric bill","gas bill",
                 "water bill","heating bill","shutoff","shutoffs","shut off"], categories:{financial:4.0,housing:2.0}, narrow:true},
       {phrases:["school physical","sports physical","work physical"], categories:{health:4.5}, narrow:true},
+      /* Routine health checks are primary care: Neighborhood Health Clinic
+         ("primary care"), Health Department ("physicals"), free clinics. */
+      {phrases:["blood pressure","blood sugar","check up","checkup","health screening"],
+       serviceTerms:["primary care","physicals","free clinic"], categories:{health:4.5}, narrow:false},
+      /* "after" alone is a stop word; the phrase is the service
+         (After-School Tutoring, Boys & Girls Club after-school programs). */
+      {phrases:["after school","afterschool"], categories:{children:3.0,education:3.0}, narrow:false},
+      {phrases:["fridge is empty","empty fridge","refrigerator is empty","cupboards are empty","nothing to eat"],
+       categories:{food:4.5}, narrow:false, situational:true, expand:["food"]},
       {phrases:["urgent care","walk in clinic","walk in"], categories:{health:4.5}, narrow:true},
       {phrases:["gas voucher","gas vouchers","gas card","gas cards"], categories:{transportation:4.5,employment:1.5}, narrow:true, situational:true},
       {phrases:["protection order","restraining order"], categories:{legal:4.8}, narrow:true},
@@ -528,13 +637,24 @@ function serviceCategoriesFor(word, lexicon) {
   return Object.keys(lexicon.categoryTerms).filter(category => lexicon.categoryTerms[category][word]).join(",");
 }
 
-function conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, datasetWords) {
+function conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, datasetWords, datasetStems) {
   if (!token || /^\d+$/.test(token) || lexicon.stopWords.has(token) || vocabulary.has(token)) return token;
   if (lexicon.protectedWords.has(token) || lexicon.synonyms[token] || (lockedTokens && lockedTokens.has(token))) return token;
-  /* A word the directory itself uses is already exact: program names such as
-     VITA, CASY or CARES, and ordinary words such as "order" in "protection
-     order", must not be "corrected" into a different service. */
+  /* The original wording is searched first. A word the directory itself
+     uses — in this form or another form of it ("print" for "printing") —
+     is already exact: program names such as VITA, CASY or CARES, and
+     ordinary words such as "order" in "protection order", must not be
+     "corrected" into a different service. */
+  /* A valid word may take another form of ITSELF that the lexicon uses
+     ("wheel" → "wheels" in "meals on wheels"), never a different word
+     ("rid" is not "rides": their stems differ). */
+  const sameWordForm = () => [`${token}s`, `${token}es`]
+    .find(form => vocabulary.has(form) && stemSearchWord(form) === stemSearchWord(token)) || token;
   if (datasetWords && datasetWords.has(token)) return token;
+  if (datasetStems && datasetStems.has(stemSearchWord(token))) return sameWordForm();
+  /* A real English word (or a plural/-ing/-ed form of one) is what the
+     person meant. Correction is only for non-words ("fud", "shleter"). */
+  if (COMMON_ENGLISH_WORDS.has(token) || COMMON_ENGLISH_WORDS.has(stemSearchWord(token))) return sameWordForm();
 
   const singular = singularCandidate(token, vocabulary);
   if (singular !== token) return singular;
@@ -709,7 +829,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   });
 
   const rawTokens = normalized ? normalized.split(" ") : [];
-  const correctedTokens = rawTokens.map(token => conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, datasetWords));
+  const correctedTokens = rawTokens.map(token => conservativelyCorrectToken(token, lexicon, vocabulary, lockedTokens, datasetWords, frequency));
   /* Words split by a space ("pre school", "day care") are joined when the
      joined word is one the lexicon or directory uses; the joined word then
      replaces its two parts, which were never separate requests. */

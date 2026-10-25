@@ -73,6 +73,8 @@ Order is always asserted by resource ID, never by score values.
 - Once a change is final, run `eval.html?holdout=1` once and record the result in the review.
 - After that, the set has been used: write a fresh holdout set before the next tuning cycle.
 
+**Status:** the holdout was run once, as author-run validation, against `app.js` `02ed160823871aec` (23 of 41 passed). That first-run report is preserved unchanged in `reports/holdout-run-1/`. The 41 cases are now regression coverage, not unseen tests; run them with `?holdout=1` and compare against that report. Any new holdout set should be written by someone other than the person tuning the search.
+
 ## Known retrieval issues (tracked, not missing services)
 
 Cases with a `known` field fail on purpose until the retrieval problem is fixed. The dataset already contains the help; the search does not reach it.
