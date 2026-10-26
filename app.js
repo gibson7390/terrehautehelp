@@ -140,8 +140,20 @@ const SEARCH_LEXICONS = {
       "get","gets","getting","got","have","has","had","there","here","somewhere","anywhere","right","now",
       "today","local","nearby","terre","haute","indiana","vigo","county",
       "ned","nead","plz","pls",
-      "not","dont","doesnt","didnt","isnt","arent","wont","after","before"
+      "not","dont","doesnt","didnt","isnt","arent","wont","after","before",
+      /* Conversational filler: "i really could use some food" asks for food.
+         As search terms these matched unrelated listings ("some" in a sober
+         living description). */
+      "really","just","some","any","also","very","so","maybe","like","go","something","anything",
+      "what","when","which","how","who","why","come","comes"
     ]),
+
+    /* Request verbs: in "could use some food" or "can really use a ride",
+       "use" asks for help; it is not substance use. Only the "use" that
+       follows one of these (with filler words between) is dropped, so "drug
+       use" keeps its meaning. */
+    requestVerbs: new Set(["can","could","would","might"]),
+    requestVerbFillers: new Set(["really","definitely","sure","surely","totally","honestly","so","still","also","just","actually","seriously","always"]),
 
     /* Ordinary words that typo correction must never rewrite. Each is a real
        word one or two edits away from a service term (die→dog, stay→spay,
@@ -462,8 +474,30 @@ const SEARCH_LEXICONS = {
        categories:{food:4.5}, narrow:false, situational:true},
       {phrases:["green card"], categories:{immigration:4.8}, narrow:true, situational:true},
       {phrases:["stay in the country","stay in this country","immigration papers","work permit","work permits","legal status"], categories:{immigration:4.5}, narrow:false, situational:true},
-      {phrases:["public transit","bus route","bus routes"], categories:{transportation:4.5}, narrow:true}
-    ]
+      {phrases:["public transit","bus route","bus routes"], categories:{transportation:4.5}, narrow:true},
+      /* Somewhere safe to be: shelter and lodging, with no assumption about
+         who is asking or why. Abuse support is offered as a separate route
+         in the results, not inferred. */
+      {phrases:["somewhere safe","someplace safe","some place safe","safe place","safe places","safe spot",
+                "place to be safe","somewhere to be safe"],
+       serviceTerms:["shelter","emergency lodging"], categories:{housing:4.5}, narrow:false, situational:true, expand:["lodging"],
+       route:"safety", browse:false}
+    ],
+
+    /* Words that on their own say "safe" with no other request ("safe",
+       "safety"): the results offer the safety routes without asserting an
+       emergency. */
+    safetyWords: new Set(["safe","safety","safely"]),
+
+    /* Requests for bus routes or schedules: the results link to the bus page.
+       Intercity coaches and other rides are separate services. */
+    busRoutePatterns: [
+      /^(?:the )?(?:bus|buses|busses|city bus|city buses|transit|public transit|bus routes?|bus schedules?)$/,
+      /\b(?:bus|buses|busses|transit)\b(?: [a-z]+){0,3} (?:route|routes|schedule|schedules|times|timetable|map|maps|stop|stops|hours)\b/,
+      /\b(?:route|routes|schedule|schedules|timetable|map|stops) (?:for |of )?(?:the )?(?:city )?(?:bus|buses|busses|transit)\b/,
+      /\b(?:city bus|city buses|terre haute transit|which bus|what bus|(?:what time|when) does the bus|bus come)\b/
+    ],
+    busRouteExclusions: /\b(?:greyhound|megabus|coach|indianapolis|indy|chicago|louisville)\b/
   }
 };
 
@@ -882,6 +916,12 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      "myself") would otherwise match unrelated listings such as In-Home Care. */
   const isServiceTerm = token => Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token));
   const negatedCost = negatedCostWordIndexes(normalized);
+  const requestVerbUses = new Set(rawTokens.map((token, i) => {
+    if (token !== "use") return -1;
+    let j = i - 1;
+    while (j >= 0 && lexicon.requestVerbFillers.has(rawTokens[j])) j--;
+    return j >= 0 && lexicon.requestVerbs.has(rawTokens[j]) ? i : -1;
+  }).filter(i => i >= 0));
   /* The words of a benign or denied statement ("i burned myself cooking
      dinner", "i did not take too many pills") are not search terms, but
      only at the positions that statement occupies: "dinner" in a separate
@@ -891,7 +931,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const benignPositions = toTokenPositions(masked);
   const crisisTokenPositions = toTokenPositions(crisisPositions);
   const baseTokens = [
-    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) &&
+    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) && !requestVerbUses.has(i) &&
       (!(crisisTokenPositions.has(i) || benignPositions.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
@@ -963,11 +1003,13 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const directOtherQuery = meaningfulTokens.some(token => token === "other" || token === "miscellaneous");
 
   /* Categories the person is browsing broadly: a broad word for that
-     category, or a situational phrase whose main category it is. */
+     category, or a situational phrase whose main category it is (unless the
+     phrase asks for one kind of place: "somewhere safe" is shelter, not
+     every housing program). */
   const broadCategories = new Set(Object.keys(lexicon.broadTerms).filter(category =>
     intentTokens.some(token => lexicon.broadTerms[category].includes(token) || lexicon.broadTerms[category].includes(stemSearchWord(token)))
   ));
-  phraseConcepts.filter(concept => concept.situational).forEach(concept => {
+  phraseConcepts.filter(concept => concept.situational && concept.browse !== false).forEach(concept => {
     const entries = Object.entries(concept.categories);
     const primary = Math.max(...entries.map(([, strength]) => strength));
     entries.forEach(([category, strength]) => { if (strength === primary) broadCategories.add(category); });
@@ -1026,9 +1068,20 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     };
   });
 
+  /* Shortcuts offered beside the results: safety routes for "somewhere
+     safe" (or "safe" alone, without asserting an emergency), and the bus
+     page for route and schedule requests. */
+  const routes = {safety:null, bus:false};
+  if (!signals.length) {
+    if (phraseConcepts.some(concept => concept.route === "safety")) routes.safety = "place";
+    else if (strongTokens.length && strongTokens.every(token => lexicon.safetyWords.has(token))) routes.safety = "word";
+  }
+  routes.bus = !lexicon.busRouteExclusions.test(normalized) && lexicon.busRoutePatterns.some(pattern => pattern.test(normalized));
+
   return {
     raw: String(rawQuery == null ? "" : rawQuery).trim(),
     language,
+    routes,
     wordFrequency: frequency,
     normalized,
     correctedText,
@@ -1190,7 +1243,11 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
       if (field !== "category" && serviceTerm) {
         Object.entries(lexicon.categoryTerms).forEach(([category, termMap]) => { if (categoryTermStrength(termMap, token)) coveredNeeds.add(category); });
       }
-      const specificDescription = field === "description" && !serviceTerm;
+      /* An everyday word in the description of a listing outside the
+         requested service ("time" in a pantry's hours for "what time does
+         the bus come") is incidental, not evidence of that service. */
+      const incidental = intended.length > 0 && !analysis.categoryScores[resource.category] && COMMON_ENGLISH_WORDS.has(token);
+      const specificDescription = field === "description" && !serviceTerm && !incidental;
       score += specificDescription && rare ? SEARCH_SPECIFIC_DESCRIPTION_WEIGHT : weight;
       if (field === "category") return;
       matchedTokens.add(token);
@@ -1647,6 +1704,44 @@ function renderUrgentGuidance(kind) {
   return "";
 }
 
+/* Shortcuts beside the results. The safety routes are optional ways to
+   narrow a search; results are already shown, and nothing here claims an
+   emergency. "Current shelter availability" / "Call 211" reuse the crisis
+   section's wording. The bus panel links to the bus page's routes and
+   schedules and makes no claim about live departures. */
+const ROUTES_ONLY_TEXT = "Choose the kind of help you need.";
+const SAFETY_ROUTES = [
+  {label:"Shelter or somewhere to stay", query:"shelter"},
+  {label:"Help with abuse or an unsafe home", query:"abuse or domestic violence"}
+];
+function renderSearchRoutes(routes, hasListings) {
+  let html = "";
+  if (routes.safety) {
+    const intro = routes.safety === "place" && hasListings
+      ? "Shelter listings are shown below. You can also narrow your search:"
+      : ROUTES_ONLY_TEXT;
+    html += `<section class="search-routes" aria-labelledby="safetyRoutesTitle">
+      <h3 class="search-routes-title" id="safetyRoutesTitle">Looking for somewhere safe?</h3>
+      <p class="search-routes-text">${intro}</p>
+      <div class="search-routes-actions">
+        ${SAFETY_ROUTES.map(route => `<button type="button" class="route-btn" data-route-query="${esc(route.query)}">${esc(route.label)}</button>`).join("")}
+        <a class="route-btn" href="#categories">Browse all resources</a>
+      </div>
+      <p class="search-routes-note">Current shelter availability: <a href="tel:211">Call 211</a></p>
+    </section>`;
+  }
+  if (routes.bus) {
+    html += `<section class="search-routes" aria-labelledby="busRoutesTitle">
+      <h3 class="search-routes-title" id="busRoutesTitle">Bus Routes &amp; Schedules</h3>
+      <p class="search-routes-text">Terre Haute Transit routes, hours of service, and how to ride.${hasListings ? " Directory listings for other transportation help are below." : ""}</p>
+      <div class="search-routes-actions">
+        <a class="route-btn route-btn-primary" href="/bus">${SVG.bus} See bus routes and schedules</a>
+      </div>
+    </section>`;
+  }
+  return html;
+}
+
 const SEARCH_GUIDANCE_TEXT = "Try entering the service you need, for example food, shelter, doctor, rent, job, recovery, or transportation.";
 const GUIDANCE_NO_LISTINGS_TEXT = "No additional directory listings matched your search.";
 const EMERGENCY_LINK_HTML =`<p>If you need help right now, see the <a href="#crisis">emergency help lines</a>.</p>`;
@@ -1707,8 +1802,12 @@ function showResults(items, title, options = {}) {
   sec.hidden = false;
   sec.style.display = "block";
 
+  const routes = options.routes || {};
+  const routeKinds = options.guidance ? [] : [routes.safety && "safety", routes.bus && "bus"].filter(Boolean);
+
   window.requestAnimationFrame(() => {
     const urgentCards = urgentKinds.map(renderUrgentGuidance).join("");
+    const routePanels = routeKinds.length ? renderSearchRoutes(routes, items.length > 0) : "";
     let resultCards;
     if (options.guidance) {
       resultCards = `<div class="empty-state"><h3>Tell us what you need</h3><p>${esc(SEARCH_GUIDANCE_TEXT)}</p>${EMERGENCY_LINK_HTML}</div>`;
@@ -1720,20 +1819,28 @@ function showResults(items, title, options = {}) {
       const filterHint = options.filterLabel
         ? `<p>No ${esc(options.filterLabel)} resources match this search. Choose “Show all categories” above, or try a different word.</p>` : "";
       resultCards = `<div class="empty-state"><h3>${GUIDANCE_NO_LISTINGS_TEXT}</h3>${filterHint}</div>`;
+    } else if (routeKinds.length) {
+      /* Only clarification shortcuts: they are the next step, so there is no
+         "no results" message, unless a category filter hides listings. */
+      resultCards = options.filterLabel
+        ? `<div class="empty-state"><p>No ${esc(options.filterLabel)} resources match this search. Choose “Show all categories” above, or try a different word.</p></div>` : "";
     } else if (options.filterLabel) {
       resultCards = `<div class="empty-state"><h3>No results found</h3><p>No ${esc(options.filterLabel)} resources match this search. Choose “Show all categories” above, or try a different word.</p>${EMERGENCY_LINK_HTML}</div>`;
     } else {
       resultCards = `<div class="empty-state"><h3>No results found</h3><p>Try a different word, or <a href="#categories">browse all categories</a>.</p>${EMERGENCY_LINK_HTML}</div>`;
     }
-    grid.innerHTML = urgentCards + resultCards;
+    grid.innerHTML = urgentCards + routePanels + resultCards;
 
     const urgentAnnouncement = urgentKinds.length
       ? " Immediate crisis guidance is shown first."
       : "";
+    const routeAnnouncement = (routeKinds.includes("safety") ? " Options for finding somewhere safe are shown." : "") +
+      (routeKinds.includes("bus") ? " A link to bus routes and schedules is shown." : "");
     const filterAnnouncement = options.filterLabel ? ` in ${options.filterLabel}` : "";
     if (options.guidance) announce(SEARCH_GUIDANCE_TEXT);
-    else if (urgentKinds.length && !items.length) announce(`Immediate crisis guidance is shown for ${title}${filterAnnouncement}. ${GUIDANCE_NO_LISTINGS_TEXT}`);
-    else announce(`${countText} for ${title}${filterAnnouncement}.${urgentAnnouncement}`);
+    else if (urgentKinds.length && !items.length) announce(`Immediate crisis guidance is shown for ${title}${filterAnnouncement}.${routeAnnouncement} ${GUIDANCE_NO_LISTINGS_TEXT}`);
+    else if (routeKinds.length && !items.length) announce(`${routeAnnouncement.trim()} ${ROUTES_ONLY_TEXT}`);
+    else announce(`${countText} for ${title}${filterAnnouncement}.${urgentAnnouncement}${routeAnnouncement}`);
 
     /* A11Y (2.3.3): honour reduced-motion for programmatic scrolling.
        Focus is deliberately NOT moved here — the status region carries the
@@ -1751,6 +1858,7 @@ function renderSearch() {
   const items = meta ? search.results.filter(r => r.category === searchState.category) : search.results;
   showResults(items, `"${searchState.query}"`, {
     urgentEmergencies: search.analysis.urgentEmergencies,
+    routes: search.analysis.routes,
     filterLabel: meta ? meta.label : ""
   });
 }
@@ -1868,6 +1976,19 @@ function initSearchHandlers(){
 
   const clear = document.getElementById("clearBtn");
   if (clear) clear.addEventListener("click", clearResults);
+
+  /* A safety shortcut runs its search across all categories, shown in the
+     search box like any other search. The panel it sat in is replaced, so
+     focus moves to the results heading (2.4.3). */
+  const grid = document.getElementById("resultsGrid");
+  if (grid) grid.addEventListener("click", e => {
+    const route = e.target.closest("[data-route-query]");
+    if (!route || !input) return;
+    input.value = route.dataset.routeQuery;
+    searchState.category = null;
+    runSearch();
+    window.requestAnimationFrame(() => document.getElementById("resultsTitle").focus());
+  });
 
   document.querySelectorAll("[data-filter]").forEach(el => {
     el.addEventListener("click", () => filterCategory(el.dataset.filter));

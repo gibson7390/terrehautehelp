@@ -328,6 +328,160 @@ ui("filter+search", "choosing another category replaces the active category", as
   return f;
 });
 
+/* Usability update: navigation, transportation card, safety and bus
+   shortcuts, and narrow layouts. */
+const PAGES = ["index.html", "about.html", "bus.html", "disclaimer.html", "guide.html", "privacy.html"];
+const routePanel = id => {
+  const title = D().getElementById(id);
+  return title ? title.closest(".search-routes") : null;
+};
+ui("navigation", "all six pages link to /bus as \"Bus Routes & Schedules\" in the main navigation", async () => {
+  const f = [];
+  for (const page of PAGES) {
+    const html = await (await fetch(`../../${page}`, {cache:"no-store"})).text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const links = [...doc.querySelectorAll('nav.site-nav a[href="/bus"]')];
+    if (links.length !== 1) { f.push(`${page}: ${links.length} bus links`); continue; }
+    const name = links[0].textContent.replace(/\s+/g, " ").trim();
+    if (name !== "Bus Routes & Schedules") f.push(`${page}: link reads "${name}"`);
+    const current = links[0].getAttribute("aria-current");
+    if ((page === "bus.html") !== (current === "page")) f.push(`${page}: aria-current ${current}`);
+    const order = [...doc.querySelectorAll("nav.site-nav a")].map(a => a.dataset.nav || a.className).join(",");
+    if (order !== "gethelp,browse,bus,about,nav-cta") f.push(`${page}: nav order ${order}`);
+    if (/free,? always/i.test(html)) f.push(`${page}: promotional "Free, always" text`);
+  }
+  return f;
+}, {kind:"navigation"});
+
+/* No horizontal overflow, and the bus link stays visible inside the header,
+   at phone, tablet and desktop widths. */
+async function loadPageAt(page, width) {
+  frame.style.width = `${width}px`;
+  await new Promise(resolve => { frame.onload = resolve; frame.src = `../../${page}?ui=${Date.now()}`; });
+  await pause(150);
+}
+[320, 360, 375, 390, 414, 600, 641, 700, 768, 900, 961, 1024, 1280].forEach(width => {
+  ui("layout", `no horizontal overflow and a visible bus link at ${width}px (all six pages)`, async () => {
+    const f = [];
+    try {
+      for (const page of PAGES) {
+        await loadPageAt(page, width);
+        const d = D(), view = d.documentElement.clientWidth;
+        if (d.documentElement.scrollWidth > view) f.push(`${page}: page is ${d.documentElement.scrollWidth}px wide in a ${view}px viewport`);
+        const bus = d.querySelector('nav.site-nav a[href="/bus"]');
+        const rect = bus && bus.getBoundingClientRect();
+        if (!bus || !rect.width || rect.left < 0 || rect.right > view) f.push(`${page}: bus link not fully visible`);
+        const getHelp = d.querySelector('nav.site-nav a[data-nav="gethelp"]');
+        const helpRect = getHelp && getHelp.getBoundingClientRect();
+        if (!getHelp || !helpRect.width || helpRect.left < 0 || helpRect.right > view) f.push(`${page}: Get Help not fully visible`);
+        [...d.querySelectorAll("nav.site-nav a")].filter(a => a.getBoundingClientRect().width)
+          .forEach(a => { if (a.getBoundingClientRect().right > view) f.push(`${page}: "${a.textContent.trim()}" overflows`); });
+      }
+    } finally { frame.style.width = ""; }
+    return f;
+  }, {kind:"layout"});
+});
+
+ui("homepage", "the Free / Always statistic is gone; resource and category counts remain", async () => {
+  const labels = [...D().querySelectorAll(".hero-stat-label")].map(el => el.textContent.trim());
+  const nums = [...D().querySelectorAll(".hero-stat-num")].map(el => el.textContent.trim());
+  const f = [];
+  if (JSON.stringify(labels) !== JSON.stringify(["Resources listed", "Categories"])) f.push(`labels ${labels.join(", ")}`);
+  if (nums.includes("Free")) f.push("Free statistic still shown");
+  if (nums[0] !== String(G("RESOURCES").length)) f.push(`resource count shows ${nums[0]}`);
+  return f;
+}, {kind:"homepage"});
+ui("homepage", "transportation card has two separate native actions and no nested controls", async () => {
+  const card = D().querySelector(".sit-card-split");
+  const f = [];
+  if (!card) return ["no transportation card"];
+  if (/^(A|BUTTON)$/.test(card.tagName)) f.push("the card itself is interactive");
+  const label = D().getElementById(card.getAttribute("aria-labelledby") || "");
+  if (!label || label.textContent.trim() !== "I need transportation") f.push("group label missing");
+  const actions = [...card.querySelectorAll("a, button")];
+  const bus = actions.find(a => a.tagName === "A" && a.getAttribute("href") === "/bus");
+  const other = actions.find(a => a.tagName === "BUTTON" && a.dataset.filter === "transportation");
+  if (!bus || bus.textContent.trim() !== "Bus routes and schedules") f.push("bus routes link missing");
+  if (!other || other.textContent.trim() !== "Other transportation assistance") f.push("other assistance button missing");
+  if (actions.some(a => a.querySelector("a, button"))) f.push("nested interactive controls");
+  if (!card.querySelector("svg")) f.push("no icon");
+  return f;
+}, {kind:"homepage"});
+ui("homepage", "\"Other transportation assistance\" lists the Transportation category", async () => {
+  await click('.sit-card-split button[data-filter="transportation"]');
+  const s = state(), expected = G("RESOURCES").filter(r => r.category === "transportation").length;
+  return s.ids.length === expected && s.cats.every(c => c === "transportation") ? [] : [`${s.ids.length} results (${[...new Set(s.cats)].join(", ")})`];
+}, {kind:"homepage"});
+
+ui("safety", "\"where can i find somewhere safe to go\" shows shelters at once with optional routes", async () => {
+  await search("where can i find somewhere safe to go");
+  const s = state(), panel = routePanel("safetyRoutesTitle"), f = [];
+  if (!panel) return ["no safety routes shown"];
+  if (s.urgent.length) f.push(`emergency guidance shown: ${s.urgent.join()}`);
+  if (!s.ids.includes("housing-002")) f.push("Light House Mission emergency lodging not listed");
+  if (s.cats.includes("recovery")) f.push("recovery listings shown");
+  const buttons = [...panel.querySelectorAll("button")].map(b => b.textContent.trim());
+  if (JSON.stringify(buttons) !== JSON.stringify(["Shelter or somewhere to stay", "Help with abuse or an unsafe home"])) f.push(`buttons: ${buttons.join(" | ")}`);
+  if (!panel.querySelector('a[href="#categories"]')) f.push("no browse-all link");
+  if (!/shown/.test(s.status) || !/somewhere safe/.test(s.status)) f.push(`status "${s.status}"`);
+  return f;
+}, {kind:"safety", sev:"high"});
+ui("safety", "the abuse route runs its own search and moves focus to the results heading", async () => {
+  await search("somewhere safe to go");
+  await click('[data-route-query="abuse or domestic violence"]');
+  await pause(100);
+  const s = state(), f = [];
+  if (s.input !== "abuse or domestic violence") f.push(`search box says "${s.input}"`);
+  if (s.ids[0] !== "crisis-002") f.push(`first result ${s.ids[0]}`);
+  if (s.focus !== "resultsTitle") f.push(`focus on ${s.focus}`);
+  if (routePanel("safetyRoutesTitle")) f.push("safety routes still shown");
+  return f;
+}, {kind:"safety"});
+ui("safety", "the shelter route runs a shelter search across all categories", async () => {
+  await search("somewhere safe to go"); await click('.cat-row[data-category="food"]');
+  await click('[data-route-query="shelter"]');
+  const s = state(), f = [];
+  if (s.input !== "shelter") f.push(`search box says "${s.input}"`);
+  if (!s.cats.includes("housing")) f.push("no housing results");
+  if (filterState().text) f.push("category filter still applied");
+  return f;
+}, {kind:"safety"});
+ui("safety", "\"safe\" alone offers the routes without emergency guidance or \"No results found\"", async () => {
+  await search("safe");
+  const s = state(), f = [];
+  if (!routePanel("safetyRoutesTitle")) f.push("no safety routes shown");
+  if (s.urgent.length) f.push("emergency guidance shown");
+  const panel = routePanel("safetyRoutesTitle");
+  if (panel && !panel.textContent.includes("Choose the kind of help you need.")) f.push("clarification text missing");
+  if (/No results found|No additional directory listings/.test(D().getElementById("resultsGrid").textContent)) f.push("a no-results message is shown");
+  if (!/Choose the kind of help you need\./.test(s.status)) f.push(`status "${s.status}"`);
+  return f;
+}, {kind:"safety"});
+["safe deposit box", "safe driving course", "food"].forEach(query => ui("safety", `no safety routes for "${query}"`, async () => {
+  await search(query);
+  return routePanel("safetyRoutesTitle") ? ["safety routes shown"] : [];
+}, {kind:"safety"}));
+ui("safety", "Back to all removes the safety routes", async () => {
+  await search("somewhere safe to go"); await clear();
+  return routePanel("safetyRoutesTitle") || state().shown ? ["routes or results still shown"] : [];
+}, {kind:"safety"});
+
+ui("bus", "a bus schedule search links to the bus page alongside directory results", async () => {
+  await search("bus schedule");
+  const s = state(), panel = routePanel("busRoutesTitle"), f = [];
+  const link = panel && panel.querySelector('a[href="/bus"]');
+  if (!link) return ["no bus page link"];
+  if (!/bus routes and schedules/i.test(link.textContent)) f.push(`link reads "${link.textContent.trim()}"`);
+  if (!s.ids.includes("transport-001")) f.push("Terre Haute Transit listing missing");
+  if (/live|real.?time|next bus|arriv/i.test(panel.textContent)) f.push("panel implies live departures");
+  return f;
+}, {kind:"bus"});
+["ride to the doctor", "medical ride", "gas voucher"].forEach(query => ui("bus", `no bus page link for "${query}"`, async () => {
+  await search(query);
+  const s = state();
+  return routePanel("busRoutesTitle") ? ["bus page link shown"] : s.ids.length ? [] : ["no results"];
+}, {kind:"bus"}));
+
 async function runUi() {
   const rows = [];
   /* ?only=<text> runs only the checks whose name contains <text>; ?repeat=N

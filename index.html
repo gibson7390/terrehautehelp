@@ -29,7 +29,7 @@
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Terre Haute Help — Free Local Resources" />
-  <meta name="twitter:description" content="Food, housing, healthcare, legal aid, sober living, and crisis support for Terre Haute and Vigo County residents. Free, always." />
+  <meta name="twitter:description" content="A community-maintained directory of food, housing, healthcare, legal aid, sober living, and crisis support for Terre Haute and Vigo County residents." />
   <meta name="twitter:image" content="https://terrehautehelp.org/og-image-v3.png" />
   <meta name="twitter:image:alt" content="Terre Haute Help — Free Community Resources" />
 
@@ -48,7 +48,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=20261025-161320" />
+  <link rel="stylesheet" href="styles.css?v=20261025-165535" />
 
   <script type="application/ld+json">
   {
@@ -210,6 +210,7 @@
         <nav class="site-nav" aria-label="Main navigation">
           <a href="#situation" data-nav="gethelp">Get Help</a>
           <a href="#categories" data-nav="browse">Browse</a>
+          <a href="/bus" data-nav="bus">Bus<span class="nav-long"> Routes &amp; Schedules</span></a>
           <a href="/about" data-nav="about">About</a>
           <a href="#crisis" class="nav-cta">Crisis Line</a>
         </nav>
@@ -233,10 +234,6 @@
             <div class="hero-stat">
               <div class="hero-stat-num">15</div>
               <div class="hero-stat-label">Categories</div>
-            </div>
-            <div class="hero-stat">
-              <div class="hero-stat-num">Free</div>
-              <div class="hero-stat-label">Always</div>
             </div>
           </div>
         </div>
@@ -335,6 +332,20 @@
             <span class="sit-arrow">See resources <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
           </button>
 
+          <!-- Two separate actions, so this card is a group, not a button:
+               interactive controls are never nested. -->
+          <div class="sit-card sit-card-split" role="group" aria-labelledby="sitTransportLabel">
+            <span class="sit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
+            <span class="sit-text">
+              <span class="sit-label" id="sitTransportLabel">I need transportation</span>
+              <span class="sit-desc">City bus routes, medical rides, gas vouchers, bike and car repair</span>
+            </span>
+            <span class="sit-actions">
+              <a href="/bus" class="sit-action sit-action-primary">Bus routes and schedules</a>
+              <button type="button" class="sit-action" data-filter="transportation">Other transportation assistance</button>
+            </span>
+          </div>
+
         </div>
       </div>
     </section>
@@ -420,6 +431,6 @@
   <script src="site.js?v=1"></script>
 
   <script src="resources.js?v=20260805-135812"></script>
-  <script src="app.js?v=20261025-161320"></script>
+  <script src="app.js?v=20261025-165535"></script>
 </body>
 </html>

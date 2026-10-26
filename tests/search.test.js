@@ -14,6 +14,7 @@ function run(query) {
     urgent: search.analysis.urgentEmergency,
     urgentAll: search.analysis.urgentEmergencies || (search.analysis.urgentEmergency ? [search.analysis.urgentEmergency] : []),
     crisis: search.analysis.crisisMatches || [],
+    routes: search.analysis.routes || {},
     ids: search.results.map(r => r.id),
     categories: search.results.map(r => r.category)
   };
@@ -73,6 +74,19 @@ const expect = {
     if (pa < 0) return `no ${a} result`;
     return pb < 0 || pa < pb ? null : `first ${b} result (#${pb + 1}) ranks above first ${a} result (#${pa + 1})`;
   },
+  /* Every result shows evidence of the requested service: it is in one of
+     these categories, or its own text names one of these words. */
+  everyOffers: (cats, words) => r => {
+    const pattern = new RegExp(`\\b(?:${words.join("|")})`, "i");
+    const bad = r.ids.filter((id, i) => {
+      if (cats.includes(r.categories[i])) return false;
+      const x = RESOURCES.find(res => res.id === id);
+      return !pattern.test(`${x.name} ${(x.tags || []).join(" ")} ${x.description}`);
+    });
+    return !r.ids.length ? "no results" : bad.length ? `no evidence of the service: ${bad.join(" ")}` : null;
+  },
+  safetyRoute: kind => r => (r.routes.safety || null) === kind ? null : `safety route ${JSON.stringify(r.routes.safety || null)}, expected ${JSON.stringify(kind)}`,
+  busRoute: wanted => r => !!r.routes.bus === wanted ? null : `bus-page link ${r.routes.bus ? "offered" : "not offered"}`,
   categoryCount: (cat, min) => r => r.categories.filter(c => c === cat).length >= min ? null : `only ${r.categories.filter(c => c === cat).length} ${cat} results, expected at least ${min}`,
   status: s => r => r.status === s ? null : `status ${r.status}, expected ${s}`
 };
@@ -497,7 +511,57 @@ const CASES = [
   ["gas voucher", [expect.first("transport-005"), expect.returned("employment-006"), expect.noCategory("housing")]],
   ["gas card", [expect.returned("transport-005"), expect.returned("employment-006")]],
   ["help", [expect.status("empty-meaningful"), expect.urgent(null)]],
-  ["food pantry", [expect.topCategories(["food"], 10), expect.notOnlyCategory("pet")]]
+  ["food pantry", [expect.topCategories(["food"], 10), expect.notOnlyCategory("pet")]],
+
+  /* Usability update. Equivalent conversational requests give the same help:
+     filler ("really", "some", "just") and the request verb in "could use"
+     are not search terms, so they cannot add substance-use listings. */
+  ["i need food", [expect.sameOrderAs("food")]],
+  ["i really could use some food", [expect.sameOrderAs("food"), expect.noCategory("recovery"), expect.noCategory("health")]],
+  ["i could really use some food today", [expect.sameOrderAs("food")]],
+  ["please i just need some food", [expect.sameOrderAs("food")]],
+  ["i really could use some food", [expect.everyOffers(["food"], ["food", "meal", "meals", "pantry", "snap", "wic"])]],
+  /* Qualifiers and further needs still count */
+  ["i could really use some food for my kids", [expect.sameOrderAs("food for my kids"), expect.firstCategory("food")]],
+  ["i could use some pet food", [expect.sameOrderAs("pet food"), expect.first("pet-001")]],
+  ["i could really use some food and a ride", [expect.someCategory("food", 3), expect.someCategory("transportation", 3), expect.noCategory("recovery")]],
+  ["i could use some help with recovery and some food", [expect.someCategory("recovery", 3), expect.someCategory("food", 3)]],
+  /* The same across other everyday needs */
+  ["i could really use somewhere to sleep", [expect.sameOrderAs("somewhere to sleep"), expect.noCategory("recovery"), expect.noCategory("health")]],
+  ["i could use some help with rent", [expect.sameOrderAs("help with rent")]],
+  ["i really could use a ride to the doctor", [expect.sameOrderAs("ride to the doctor"), expect.returned("transport-002")]],
+  ["i really need a doctor", [expect.sameOrderAs("doctor")]],
+  ["i could really use some dental care", [expect.sameOrderAs("dental care")]],
+  /* "use" keeps its meaning outside the request verb */
+  ["drug use", [expect.someCategory("recovery", 3)]],
+  ["help with my substance use", [expect.anyInTop(["health-001","health-004","recovery-013","recovery-014","recovery-015"], 5)]],
+  ["i could use help with my drug use", [expect.someCategory("recovery", 3)]],
+
+  /* Somewhere safe: shelter results at once, without assuming gender,
+     addiction or abuse, plus optional narrowing routes. */
+  ["where can i find somewhere safe to go", [expect.urgent(null), expect.safetyRoute("place"), expect.returned("housing-002"),
+    expect.firstOneOf(["housing-002","food-006","housing-006"]), expect.absent("recovery-007"), expect.noCategory("recovery")]],
+  ["i need some somewhere safe to go", [expect.sameOrderAs("where can i find somewhere safe to go"), expect.safetyRoute("place")]],
+  ["i need a safe place to stay tonight", [expect.safetyRoute("place"), expect.returned("housing-002"), expect.noCategory("recovery")]],
+  ["safe", [expect.urgent(null), expect.safetyRoute("word")]],
+  ["safety", [expect.urgent(null), expect.safetyRoute("word")]],
+  ["safe driving course", [expect.safetyRoute(null), expect.noCategory("housing")]],
+  ["safe deposit box", [expect.safetyRoute(null), expect.noCategory("housing")]],
+  ["safe sleep for babies", [expect.safetyRoute(null)]],
+  /* Explicit danger keeps its existing recognition */
+  ["i dont feel safe at home", [expect.first("crisis-002")]],
+
+  /* Bus routes: a direct link to the bus page for route or schedule requests,
+     never for other transportation needs */
+  ["bus routes", [expect.busRoute(true), expect.first("transport-001")]],
+  ["bus schedule", [expect.busRoute(true), expect.returned("transport-001")]],
+  ["what time does the bus come", [expect.busRoute(true)]],
+  ["which bus goes to walmart", [expect.busRoute(true)]],
+  ["city bus", [expect.busRoute(true)]],
+  ["ride to the doctor", [expect.busRoute(false), expect.returned("transport-002")]],
+  ["medical ride", [expect.busRoute(false)]],
+  ["greyhound bus to indianapolis", [expect.busRoute(false), expect.returned("transport-007")]],
+  ["gas voucher", [expect.busRoute(false)]]
 ];
 
 function runSuite() {
