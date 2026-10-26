@@ -69,10 +69,13 @@ input{font-family:var(--font-body)}
     outline:3px solid var(--focus-ring);outline-offset:3px;
   }
 }
-/* A11Y: keep focused targets clear of the sticky chrome. WCAG 2.4.11
-   --sticky-offset is measured at runtime by site.js; the :root value is a
-   fallback for the no-JS case. */
-[id]{scroll-margin-top:var(--sticky-offset)}
+/* A11Y: keep focused elements and jump-link targets clear of the sticky
+   chrome. WCAG 2.4.11. Set on the scrolling element (html), so it applies to
+   every element the browser scrolls into view, including keyboard focus on
+   links without an id; the previous [id]{scroll-margin-top} covered only
+   jump-link targets. --sticky-offset is measured at runtime by site.js; the
+   :root and breakpoint values are fallbacks for the no-JS case. */
+html{scroll-padding-top:var(--sticky-offset)}
 
 /* ══ A11Y: SKIP LINK — WCAG 2.4.1 bypass mechanism ══ */
 .skip-link{

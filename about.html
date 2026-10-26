@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>About - Terre Haute Help | Free Community Resources for Vigo County</title>
-  <meta name="description" content="Terre Haute Help was built by Robert Casey, a Terre Haute resident and CS student, to connect Vigo County residents to free local resources for food, housing, healthcare, crisis support, and more." />
-  <meta name="keywords" content="about Terre Haute Help, Robert Casey Terre Haute, free community resources Vigo County, Terre Haute resource directory, volunteer community site Terre Haute Indiana" />
+  <meta name="description" content="Terre Haute Help was built by Robert Casey, a Terre Haute resident and CS student, to connect Vigo County residents to local resources for food, housing, healthcare, crisis support, and more." />
+  <meta name="keywords" content="about Terre Haute Help, Robert Casey Terre Haute, free community resources Vigo County, Terre Haute resource directory, independent community site Terre Haute Indiana" />
   <meta name="author" content="Robert Casey" />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#0A2540" />
@@ -15,7 +15,7 @@
   <meta name="geo.position" content="39.4667;-87.4139" />
   <meta name="ICBM" content="39.4667, -87.4139" />
   <meta property="og:title" content="About - Terre Haute Help" />
-  <meta property="og:description" content="Terre Haute Help was built by Robert Casey to connect Vigo County residents to free local resources for food, housing, healthcare, and crisis support." />
+  <meta property="og:description" content="Terre Haute Help was built by Robert Casey to connect Vigo County residents to local resources for food, housing, healthcare, and crisis support." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://terrehautehelp.org/about" />
   <meta property="og:image" content="https://terrehautehelp.org/og-image-v3.png" />
@@ -39,7 +39,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20261025-181054" />
+  <link rel="stylesheet" href="styles.css?v=20261025-220542" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -48,7 +48,7 @@
         "@type": "WebPage",
         "url": "https://terrehautehelp.org/about",
         "name": "About - Terre Haute Help",
-        "description": "Terre Haute Help is a free community resource directory built by Robert Casey, a Terre Haute resident, to connect Vigo County residents to local resources for food, housing, healthcare, and crisis support.",
+        "description": "Terre Haute Help is a free, independent community resource directory built by Robert Casey, a Terre Haute resident, to connect Vigo County residents to local resources for food, housing, healthcare, and crisis support.",
         "inLanguage": "en-US",
         "isPartOf": {"@id": "https://terrehautehelp.org"},
         "breadcrumb": {
@@ -76,7 +76,7 @@
         "sameAs": "https://www.linkedin.com/in/kalillacai",
         "jobTitle": "Founder",
         "worksFor": {
-          "@type": "NGO",
+          "@type": "Organization",
           "name": "Terre Haute Help",
           "url": "https://terrehautehelp.org"
         },
@@ -91,52 +91,43 @@
   }
   </script>
   <style>
-    .policy-hero{background:var(--navy);color:#fff;padding:64px 32px 72px;position:relative;overflow:hidden}
-    .policy-hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 80% 50%,rgba(232,160,32,0.10) 0%,transparent 60%);pointer-events:none}
-    .policy-hero-inner{max-width:720px;margin:0 auto;position:relative;z-index:1}
-    .policy-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:0.72rem;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber);margin-bottom:20px}
+    /* About page. Same tokens, type and proportions as the bus page: a
+       compact hero, one readable column, and a quiet side panel. */
+    .policy-hero{background:var(--navy);color:#fff;padding:40px 32px 36px;position:relative;overflow:hidden}
+    .policy-hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 85% 40%,rgba(232,160,32,0.10) 0%,transparent 60%);pointer-events:none}
+    .about-wrap{max-width:calc(var(--max-w) - 64px);margin:0 auto;position:relative;z-index:1}
+    .policy-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:0.72rem;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber);margin-bottom:12px}
     .policy-eyebrow::before{content:'';display:block;width:20px;height:2px;background:var(--amber);border-radius:2px}
-    .policy-hero h1{font-family:var(--font-display);font-size:clamp(2rem,5vw,3.2rem);font-weight:900;line-height:1.1;letter-spacing:-0.03em;color:#fff;margin-bottom:16px}
-    .policy-hero p{font-size:1.05rem;color:rgba(255,255,255,0.65);line-height:1.7;max-width:560px}
-    .about-body{max-width:720px;margin:0 auto;padding:64px 32px 96px}
-    .about-section{margin-bottom:56px}
-    .about-section h2{font-family:var(--font-display);font-size:1.5rem;font-weight:700;color:var(--ink);margin-bottom:16px;letter-spacing:-0.02em}
-    .about-section p{font-size:0.97rem;color:var(--ink-2);line-height:1.85;margin-bottom:16px}
-    .about-section p:last-child{margin-bottom:0}
-    .about-section a{color:var(--navy);text-decoration:underline;text-underline-offset:2px}
-    .about-section a:hover{color:var(--navy-light)}
-    .about-divider{height:1px;background:var(--border);margin-bottom:56px}
-    .about-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 32px;display:flex;align-items:flex-start;gap:24px;margin-bottom:56px}
-    .about-card-icon{width:48px;height:48px;background:var(--navy);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-    .about-card-icon svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
-    .about-card-body h3{font-size:0.95rem;font-weight:700;color:var(--ink);margin-bottom:6px}
-    .about-card-body p{font-size:0.88rem;color:var(--ink-muted);line-height:1.65;margin:0}
-    .about-card-body a{color:var(--navy);font-weight:600;text-decoration:underline;text-underline-offset:2px}
-    .about-card-body a:hover{color:var(--navy-light)}
-    .about-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:56px}
-    .about-stat{background:var(--navy);border-radius:var(--radius-lg);padding:24px 20px;text-align:center}
-    .about-stat-num{font-family:var(--font-display);font-size:2rem;font-weight:900;color:#fff;line-height:1;margin-bottom:6px}
-    .about-stat-label{font-size:0.78rem;color:rgba(255,255,255,0.55);letter-spacing:0.04em}
-    .about-contact{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;text-align:center}
-    .about-contact h2{font-family:var(--font-display);font-size:1.4rem;font-weight:700;color:var(--ink);margin-bottom:10px}
-    .about-contact p{font-size:0.92rem;color:var(--ink-muted);line-height:1.7;max-width:480px;margin:0 auto 24px}
-    .about-contact-links{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
-    .about-btn{display:inline-flex;align-items:center;gap:8px;font-size:0.88rem;font-weight:700;padding:11px 22px;border-radius:var(--radius);transition:background 0.15s,color 0.15s,border-color 0.15s;text-decoration:none;letter-spacing:0.01em}
-    .about-btn:hover{text-decoration:none}
-    .about-btn-primary{background:var(--navy);color:#fff;border:1.5px solid var(--navy)}
-    .about-btn-primary:hover{background:var(--navy-light);border-color:var(--navy-light)}
-    .about-btn-secondary{background:#fff;color:var(--ink-2);border:1.5px solid var(--border-2)}
-    .about-btn-secondary:hover{border-color:var(--ink-2);color:var(--ink)}
-    .about-btn svg{width:16px;height:16px;flex-shrink:0}
-    .linkedin-btn{background:#0A66C2;color:#fff;border:1.5px solid #0A66C2}
-    .linkedin-btn:hover{background:#084e96;border-color:#084e96}
+    .policy-hero h1{font-family:var(--font-display);font-size:clamp(1.9rem,4vw,2.6rem);font-weight:900;line-height:1.1;letter-spacing:-0.03em;color:#fff;margin-bottom:10px}
+    .about-lede{font-size:1rem;color:rgba(255,255,255,0.82);line-height:1.6;max-width:640px}
+
+    .about-body{max-width:var(--max-w);margin:0 auto;padding:40px 32px 72px;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:48px;align-items:start}
+    .about-main{max-width:680px}
+    .about-main>section+section{margin-top:36px}
+    .about-h2{font-family:var(--font-display);font-size:1.5rem;font-weight:700;color:var(--ink);letter-spacing:-0.02em;line-height:1.2;margin-bottom:10px}
+    .about-main p{font-size:0.97rem;color:var(--ink-2);line-height:1.75}
+    .about-main p+p{margin-top:12px}
+    .about-main a,.about-aside a{color:var(--navy);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+    .about-main a:hover,.about-aside a:hover{color:var(--navy-light)}
+
+    .about-aside{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px 22px 8px}
+    .about-aside h2{font-family:var(--font-display);font-size:1.2rem;font-weight:700;color:var(--ink);margin-bottom:6px}
+    .aside-item{padding:12px 0;border-top:1px solid var(--border)}
+    .aside-item:first-of-type{border-top:none}
+    .aside-item h3{font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:6px}
+    .aside-item p,.aside-item li{font-size:0.88rem;color:var(--ink-2);line-height:1.6}
+    .aside-item p+p{margin-top:6px}
+    .aside-item ul{list-style:none;margin:0;padding:0}
+    .aside-item li+li{margin-top:4px}
+    .aside-item a{display:inline-block;padding:2px 0}
+
+    @media(max-width:960px){
+      .about-body{grid-template-columns:1fr;gap:32px}
+      .about-main{max-width:none}
+    }
     @media(max-width:640px){
-      .policy-hero{padding:48px 20px 56px}
-      .about-body{padding:48px 20px 72px}
-      .about-stats{grid-template-columns:1fr}
-      .about-card{flex-direction:column;gap:16px;padding:22px 20px}
-      .about-contact-links{flex-direction:column;align-items:stretch}
-      .about-btn{justify-content:center}
+      .policy-hero{padding:28px 20px 26px}
+      .about-body{padding:28px 20px 56px}
     }
   </style>
 </head>
@@ -167,7 +158,7 @@
           <a href="/" data-nav="gethelp">Get Help</a>
           <a href="/#categories" data-nav="browse">Browse</a>
           <a href="/bus" data-nav="bus">Bus<span class="nav-long"> Routes &amp; Schedules</span></a>
-          <a href="/about" data-nav="about">About</a>
+          <a href="/about" data-nav="about" aria-current="page">About</a>
           <a href="/#crisis" class="nav-cta">Crisis Line</a>
         </nav>
       </div>
@@ -176,93 +167,78 @@
 
   <main id="main">
     <div class="policy-hero" data-surface="dark">
-      <div class="policy-hero-inner">
-        <p class="policy-eyebrow">About this site</p>
-        <h1>Built for Terre Haute,<br>by Terre Haute.</h1>
-        <p>A free, community-maintained directory connecting Vigo County residents to the resources they need. No sign-up, no ads, no cost.</p>
+      <div class="about-wrap">
+        <p class="policy-eyebrow">About</p>
+        <h1>About Terre Haute Help</h1>
+        <p class="about-lede">A free, independent directory of community resources for people in Terre Haute and Vigo County, Indiana.</p>
       </div>
     </div>
 
     <div class="about-body">
+      <div class="about-main">
 
-      <div class="about-stats">
-        <div class="about-stat">
-          <div class="about-stat-num">120+</div>
-          <div class="about-stat-label">Resources listed</div>
+        <section aria-labelledby="whatTitle">
+          <h2 class="about-h2" id="whatTitle">What this site is</h2>
+          <p>Terre Haute Help lists local services in one place: food pantries and meals, shelter and housing help, healthcare, crisis support, legal aid, transportation, and more. Each listing gives the practical details you need to make a call or a visit, such as what the service offers, how to reach it, its hours, and what to bring.</p>
+          <p>The site is free to use. There is nothing to sign up for, no account, and no advertising. The services listed are separate, and some have their own costs or requirements.</p>
+        </section>
+
+        <section aria-labelledby="notTitle">
+          <h2 class="about-h2" id="notTitle">What it is not</h2>
+          <p>Terre Haute Help does not run any of the services listed here. Each organization decides its own services, eligibility, hours, and availability, and those can change without notice. A listing is not a promise that a program is open, has space, or will be able to help you, so please call the provider before you travel.</p>
+          <p>If you need help right now, see the <a href="/#crisis">crisis and emergency lines</a>. For emergencies, call 911.</p>
+        </section>
+
+        <section aria-labelledby="whyTitle">
+          <h2 class="about-h2" id="whyTitle">Why I built it</h2>
+          <p>I've been where many people using this site are now: hopeless, hungry, with nowhere to lay my head at night, and with little to no help or support. I wish I'd had something like this back then.</p>
+          <p>When someone in Terre Haute needs help, the information is scattered across dozens of websites, outdated pages, and word of mouth. Finding it shouldn't be that hard, especially in a crisis. I built Terre Haute Help for the people who are in that place right now.</p>
+        </section>
+
+        <section aria-labelledby="whoTitle">
+          <h2 class="about-h2" id="whoTitle">Who runs it</h2>
+          <p>My name is Robert Casey. I live in Terre Haute and study computer science at Ivy Tech Community College. I created Terre Haute Help and am responsible for it.</p>
+          <p>The site is independent. It is not affiliated with any government agency, political organization, or business. It has no ads, no paywalls, and no user accounts; the <a href="/privacy">privacy policy</a> explains what the web server records.</p>
+        </section>
+
+        <section aria-labelledby="howTitle">
+          <h2 class="about-h2" id="howTitle">How listings are researched and updated</h2>
+          <p>Resource information is researched using official websites, publicly available information, and direct contact with providers when possible. Some information also comes from firsthand experience: I have used some of these services myself, including a food pantry. I have not visited or contacted every organization listed.</p>
+          <p>Each listing shows the month it was last checked, and listings are reviewed as new information becomes available. Services, hours, eligibility requirements, and availability can change, so please confirm important details directly with the organization before traveling.</p>
+        </section>
+
+        <section aria-labelledby="fixTitle">
+          <h2 class="about-h2" id="fixTitle">Corrections and suggestions</h2>
+          <p>If you find information that is wrong or out of date, or you know of a local resource that should be listed, email <a href="mailto:terrehautehelp@gmail.com">terrehautehelp@gmail.com</a>. It helps to include the name of the listing and what has changed.</p>
+          <p>Organizations listed on the site can use the same address to update their information, correct an error, or ask to be removed.</p>
+        </section>
+      </div>
+
+      <aside class="about-aside" aria-labelledby="contactTitle">
+        <h2 id="contactTitle">Contact</h2>
+        <div class="aside-item">
+          <h3>Email</h3>
+          <p><a href="mailto:terrehautehelp@gmail.com">terrehautehelp@gmail.com</a></p>
+          <p>For corrections, new resources, and listing updates.</p>
         </div>
-        <div class="about-stat">
-          <div class="about-stat-num">15</div>
-          <div class="about-stat-label">Categories</div>
+        <div class="aside-item">
+          <h3>Founder</h3>
+          <p>Robert Casey, Terre Haute</p>
+          <p><a href="https://www.linkedin.com/in/kalillacai" target="_blank" rel="noopener noreferrer">LinkedIn profile<span class="visually-hidden"> (opens in a new tab)</span></a></p>
         </div>
-        <div class="about-stat">
-          <div class="about-stat-num">Free</div>
-          <div class="about-stat-label">Always</div>
+        <div class="aside-item">
+          <h3>Need help now?</h3>
+          <p>See the <a href="/#crisis">crisis and emergency lines</a>. For emergencies, call 911.</p>
         </div>
-      </div>
-
-      <div class="about-section">
-        <h2>Why this site exists</h2>
-        <p>When someone in Terre Haute needs help, the information they need is scattered across dozens of websites, outdated government pages, and word of mouth. Food pantries, shelters, free clinics, legal aid, crisis lines. Finding it fast, especially in a moment of crisis, shouldn't be that hard.</p>
-        <p>Terre Haute Help exists to fix that. One place, plain language, verified information, free on any device. If you need help, you shouldn't have to work to find it.</p>
-        <p>Every listing is reviewed and includes addresses, phone numbers, hours, and what to bring. The practical details that matter when you're actually trying to access a service.</p>
-        <p>I've been where you are. Hopeless, hungry, nowhere to lay my head at night, with little to no help or support. I wish I'd had something like this back then. That's why I built it, for the people who are in that place right now. If you find an error or need help finding the right resource, email us at <a href="mailto:terrehautehelp@gmail.com">terrehautehelp@gmail.com</a>.</p>
-      </div>
-
-      <div class="about-divider"></div>
-
-      <div class="about-section">
-        <h2>Who built this</h2>
-        <p>My name is Robert Casey. I'm a Terre Haute resident and CS student at Ivy Tech Community College. I built this site because access to basic community resources shouldn't depend on knowing the right people or navigating a maze of outdated information.</p>
-        <p>Terre Haute has a lot of people who need help and a lot of organizations trying to provide it. The gap between them is often just a lack of clear, accessible information. This site is an attempt to close that gap.</p>
-        <p>Everything here was built and is maintained by hand. Researching organizations, verifying contact information, and keeping listings current. If you find something out of date or know of a resource that should be listed, I want to hear from you.</p>
-      </div>
-
-      <div class="about-card">
-        <div class="about-card-icon">
-          <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <div class="aside-item">
+          <h3>More from this site</h3>
+          <ul>
+            <li><a href="/guide">What to expect when you ask for help</a></li>
+            <li><a href="/privacy">Privacy policy</a></li>
+            <li><a href="/disclaimer">Disclaimer</a></li>
+          </ul>
         </div>
-        <div class="about-card-body">
-          <h3>Robert Casey, Site founder</h3>
-          <p>CS student at Ivy Tech Community College. Terre Haute resident. Connect on <a href="https://www.linkedin.com/in/kalillacai" target="_blank" rel="noopener noreferrer">LinkedIn</a> or reach out by email at <a href="mailto:terrehautehelp@gmail.com">terrehautehelp@gmail.com</a>.</p>
-        </div>
-      </div>
-
-      <div class="about-divider"></div>
-
-      <div class="about-section">
-        <h2>How the directory works</h2>
-        <p>Every resource listed on this site was individually researched and verified. Listings include the organization's name, a plain-language description of what they offer, address, phone number, hours, and what to bring or expect when you contact them.</p>
-        <p>Listings are tagged with a last-verified date. When information changes, we update it. If you notice something wrong, outdated, or missing, let us know. This directory is only as useful as it is accurate.</p>
-        <p>This site has no ads, no paywalls, no user accounts, and no tracking. It is not affiliated with any government agency, political organization, or commercial entity. It is a free public resource maintained by volunteers.</p>
-      </div>
-
-      <div class="about-divider"></div>
-
-      <div class="about-section">
-        <h2>How to help</h2>
-        <p>The most useful thing you can do is share this site with someone who might need it. If you work at or know of a local organization that should be listed, or if you notice information that needs updating, email us.</p>
-        <p>If you are an organization listed here and want to update your information, correct an error, or be removed, contact us and we will take care of it promptly.</p>
-      </div>
-
-      <div class="about-contact">
-        <h2>Get in touch</h2>
-        <p>To report outdated information, suggest a new resource, or connect about the site, reach out directly.</p>
-        <div class="about-contact-links">
-          <a href="mailto:terrehautehelp@gmail.com" class="about-btn about-btn-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            Email us
-          </a>
-          <a href="https://www.linkedin.com/in/kalillacai" target="_blank" rel="noopener noreferrer" class="about-btn linkedin-btn">
-            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
-            LinkedIn
-          </a>
-          <a href="/" class="about-btn about-btn-secondary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            Back to directory
-          </a>
-        </div>
-      </div>
-
+      </aside>
     </div>
   </main>
 
@@ -277,7 +253,7 @@
       </div>
       <div class="footer-center">
         <p class="footer-section-label">About this site</p>
-        <p class="footer-note">Terre Haute Help is a free, independent resource directory maintained by local volunteers. All listings are verified and updated regularly. This site has no ads, no paywalls, and no affiliation with any government agency.</p>
+        <p class="footer-note">Terre Haute Help is a free, independent resource directory. Information is researched using official websites, public information, and direct contact with providers when possible. Programs, hours, eligibility, and availability can change, so confirm details with the provider before traveling and report outdated information to us. This site has no ads, no paywalls, and no affiliation with any government agency.</p>
         <p class="footer-note" style="margin-top:10px;">To report an incorrect or outdated listing, email <a href="mailto:terrehautehelp@gmail.com">terrehautehelp@gmail.com</a>.</p>
       </div>
       <div class="footer-right">
@@ -299,6 +275,6 @@
     </div>
   </footer>
 
-  <script src="site.js?v=20261025-184526"></script>
+  <script src="site.js?v=20261025-220542"></script>
 </body>
 </html>

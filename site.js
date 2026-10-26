@@ -98,7 +98,7 @@
       window.addEventListener(type, onScrollIntent, { once: true, passive: true });
     });
     /* The short delay lets the sticky-offset measurement above, which also
-       waits for fonts, update scroll-margin-top first. */
+       waits for fonts, update the scroll offset first. */
     document.fonts.ready.then(function () {
       window.setTimeout(function () {
         if (moved) return;

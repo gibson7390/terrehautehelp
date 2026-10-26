@@ -1721,8 +1721,13 @@ function renderCard(r) {
   const website = /^https?:\/\//i.test(String(r.website || "").trim()) ? String(r.website).trim() : "";
   const btnWeb  = website
     ? `<a href="${esc(website)}" target="_blank" rel="noopener" class="rc-btn rc-btn-secondary">${SVG.globe} Website<span class="visually-hidden"> for ${esc(r.name)} (opens in a new tab)</span></a>` : "";
+  /* A listing can name what its address is ("Directions to transit office")
+     when that address is not where the service itself is used. */
+  const mapLabel = r.directionsLabel
+    ? `${esc(r.directionsLabel)}<span class="visually-hidden">, ${esc(r.name)} (opens in a new tab)</span>`
+    : `Directions<span class="visually-hidden"> to ${esc(r.name)} (opens in a new tab)</span>`;
   const btnMap  = noConf
-    ? `<a href="https://maps.google.com/?q=${encodeURIComponent(r.address)}" target="_blank" rel="noopener" class="rc-btn rc-btn-secondary">${SVG.map} Directions<span class="visually-hidden"> to ${esc(r.name)} (opens in a new tab)</span></a>` : "";
+    ? `<a href="https://maps.google.com/?q=${encodeURIComponent(r.address)}" target="_blank" rel="noopener" class="rc-btn rc-btn-secondary">${SVG.map} ${mapLabel}</a>` : "";
 
   /* A11Y: .rc-name is an <h3> so results can be navigated by heading.
      Result section title is <h2>, so h3 is the correct level. */
