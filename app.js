@@ -216,7 +216,7 @@ const SEARCH_LEXICONS = {
         /\b(?:not|isnt|is not|wasnt|was not|stopped|has stopped|quit|no longer) breathing\b/,
         /* Past-tense ingestion only: "i take too many pills" describes
            medication management, not an acute ingestion. */
-        /\b(?:took|taken|swallowed|ate|had) (?:too many|way too many) (?:pills|meds|tablets|capsules)\b/,
+        /\b(?:took|taken|swallowed|ate|had) (?:too many|way too many) (?:[a-z]+ )?(?:pills|meds|tablets|capsules)\b/,
         /\b(?:took|taken|swallowed|ate|drank|had) (?:too much|way too much) (?:medicine|medication|meds)\b/,
         /* Acute by what is described, not by tense: an ingestion someone
            witnessed, swallowing in progress, or taking "right now". Routine
@@ -232,7 +232,18 @@ const SEARCH_LEXICONS = {
            the floor") does not cancel the emergency. */
         new RegExp(String.raw`\b(?:he|she|they|someone|somebody|my \w+)(?: is| s| was)? (?:not|isnt|wasnt|wont|will not|cant|cannot|can not) (?:waking up|wake up|be woken|respond|responding)\b` + ROUTINE_WAKING),
         new RegExp(String.raw`\b(?:cant|cannot|can not|couldnt|could not) wake (?:him|her|them|my \w+|someone|somebody)(?: up)?\b(?! up\b)` + ROUTINE_WAKING),
-        /\b(?:he|she|they|someone|somebody|my \w+) (?:is|s|was|went|seems) unresponsive\b/
+        /\b(?:he|she|they|someone|somebody|my \w+) (?:is|s|was|went|seems) unresponsive\b/,
+        /* Unconscious or lost consciousness: a person, then up to three
+           ordinary words ("became", "was found", "collapsed and is",
+           "suddenly"). A denial, a worry or a hypothetical between them ("is
+           not", "worried about", "might") is not an emergency, and neither is
+           the word itself ("unconscious bias", "what does unconscious mean").
+           Nothing is assumed about the cause. */
+        /\b(?:he|she|they|someone|somebody|my \w+)(?: (?!(?:not|isnt|wasnt|arent|never|no|worried|afraid|scared|about|might|could|would|may|if|what|when)\b)[a-z]+){0,3} (?:unconscious|lost consciousness|losing consciousness)\b(?! (?:bias|biases|mind|thoughts?|mean|means|meaning)\b)(?: (?:and|but) (?:still )?(?:wont|will not|cant|cannot|can not|isnt|is not|doesnt|does not) (?:wake up|waking up|be woken|respond|responding))?/,
+        /* Passed or blacked out, followed by the end of the statement or by
+           where, when or how ("in the bathroom", "after drinking", "and wont
+           wake up"); never by something handed out ("flyers", "water"). */
+        /\b(?:he|she|they|someone|somebody|my \w+)(?: just| has| had| is| was| s| suddenly)? (?:passed|blacked) out(?= \||$| (?:and|at|in|on|after|from|while|during|again|cold|drunk|last|this|today|tonight|yesterday|earlier|behind|outside|inside|near|by|when|because|but|or|then|completely|suddenly)\b)(?: (?:and|but) (?:still )?(?:wont|will not|cant|cannot|can not|isnt|is not|doesnt|does not) (?:wake up|waking up|be woken|respond|responding))?/
       ]},
       /* Wanting to stop substance use: recovery services, no guidance card.
          "been using" alone is ambiguous ("been using the bus"), so it counts
@@ -272,7 +283,7 @@ const SEARCH_LEXICONS = {
       /\b(?:not|isnt|is not|wasnt|was not) breathing (?:so |as |too |very )?(?:hard|heavily|heavy|fast|quickly|rapidly|deeply|loudly)(?: (?:anymore|after (?:exercise|exercising|working out|a workout|running|the gym)))?\b/,
       /* A denial of the ingestion itself ("i did not take too many pills",
          "i never took too many pills"). */
-      /\b(?:did not|didnt|never|have not|havent|has not|hasnt|had not|hadnt) (?:take|took|taken|swallow|swallowed|eat|ate|eaten|drink|drank|have|had) (?:too many|way too many|too much|way too much|a bunch of|a handful of|a whole bottle of|the whole bottle of) (?:my |her |his |the )?(?:pills|meds|tablets|capsules|medicine|medication)\b/,
+      /\b(?:did not|didnt|never|have not|havent|has not|hasnt|had not|hadnt) (?:take|took|taken|swallow|swallowed|eat|ate|eaten|drink|drank|have|had) (?:too many|way too many|too much|way too much|a bunch of|a handful of|a whole bottle of|the whole bottle of) (?:my |her |his |the )?(?:[a-z]+ )?(?:pills|meds|tablets|capsules|medicine|medication)\b/,
       /* Organisations, not people, being unresponsive */
       /\bmy (?:landlord|caseworker|case worker|lawyer|attorney|office|boss|manager|property manager|insurance|doctors office) (?:is|s|was|has been) (?:unresponsive|not responding)\b/,
       /\b(?:did not|didnt|never) (?:see|saw|watch|watched|notice|noticed) (?:her|him|them|someone|somebody) (?:take|took|swallow|swallowed|eat|ate) (?:way )?(?:too many|too much) (?:pills|meds|tablets|capsules|medicine|medication)\b/,
@@ -365,11 +376,24 @@ const SEARCH_LEXICONS = {
       jail:["reentry","incarceration"], prison:["reentry","incarceration"], incarcerated:["reentry","incarceration"],
       felon:["felony"], felons:["felony"], cps:["dcs"], protective:["protection"],
       medicine:["medication","prescriptions"], meds:["medication","prescriptions"],
-      drinking:["alcohol"], drunk:["alcohol"], raped:["sexual","assault"],
+      drinking:["alcohol","addiction","substance"], drunk:["alcohol"], raped:["sexual","assault"],
       abuser:["abuse"], abusive:["abuse"], psychiatrist:["psychiatry","psychiatric"],
       power:["utility","utilities"], eat:["meals"], busses:["bus"],
       daycare:["childcare"], evicted:["eviction"], uti:["utis"], addicted:["addiction"], addict:["addiction"],
-      meth:["drug","substance"],
+      meth:["drug","substance","addiction"],
+      /* Staging acceptance: a substance named on its own ("my son is using
+         heroin") asks for help with its use. Each maps to the words the
+         treatment and recovery listings use ("addiction", "substance use",
+         "opioid treatment"). Using a substance is not an overdose; overdose
+         guidance still comes only from the overdose phrases. */
+      heroin:["opioid","addiction","substance"], fentanyl:["opioid","addiction","substance"], fent:["opioid","addiction","substance"],
+      opioid:["addiction","substance"], opioids:["opioid","addiction","substance"], opiate:["opioid","addiction","substance"],
+      opiates:["opioid","addiction","substance"], oxycodone:["opioid","addiction","substance"], oxycontin:["opioid","addiction","substance"],
+      percocet:["opioid","addiction","substance"], percocets:["opioid","addiction","substance"],
+      methamphetamine:["drug","substance","addiction"], cocaine:["drug","substance","addiction"],
+      marijuana:["drug","substance","addiction"], xanax:["substance","addiction"], benzos:["substance","addiction"],
+      drugs:["addiction","substance"], alcohol:["addiction","substance"],
+      alcoholic:["alcohol","addiction","substance"], alcoholism:["alcohol","addiction","substance"],
       /* First holdout run (now regression). Each maps to the dataset's own
          service wording: Burial Assistance / trustees ("burial", "funeral");
          Wabash Valley Health Center ("dental"); Hamilton Center, Centerstone,
@@ -452,13 +476,28 @@ const SEARCH_LEXICONS = {
       {phrases:["food stamps","snap benefits","snap","ebt"], categories:{food:4.5}, narrow:true},
       {phrases:["school lunch","school lunches","school meals","free lunch","reduced lunch","free and reduced"], categories:{food:4.5}, narrow:true},
       {phrases:["meals on wheels","home delivered meals","food delivered","meals delivered","delivered meals"], categories:{senior:5.0}, narrow:true},
-      {phrases:["place to stay","nowhere to go","no where to go","no place to go","place to live","kicked out"], categories:{housing:4.5}, narrow:false, situational:true},
+      {phrases:["place to stay","nowhere to go","no where to go","no place to go","place to live","kicked out",
+                "somewhere to stay","somewhere to live"], categories:{housing:4.5}, narrow:false, situational:true},
       {phrases:["kicking me out","kick me out","kicked me out","kicking us out","kick us out","getting evicted","being evicted"],
        categories:{housing:4.0,legal:2.5}, narrow:false, situational:true, expand:["eviction"]},
       {phrases:["get clean","getting clean","stay clean","quit drinking","stop drinking"], categories:{recovery:4.5}, narrow:false, situational:true},
       {phrases:["vocational rehab","vocational rehabilitation"], categories:{education:4.5,employment:2.0}, narrow:true},
       {phrases:["homeless student","homeless students","homeless child","homeless children"], categories:{education:4.5}, narrow:true},
-      {phrases:["rent assistance","rental assistance","help with rent","pay rent","paying rent"], categories:{housing:3.8,financial:3.8}, narrow:true},
+      /* Rent help: the phrase is the request, so "assistance" is not searched
+         on its own (it names medication, burial and utility programs too).
+         A listing offers it when it documents rent, rental help or the
+         Housing Choice Voucher; township trustees qualify by their own text. */
+      {phrases:["rent assistance","rental assistance","help with rent","pay rent","paying rent"],
+       serviceTerms:["rent","rental","housing choice voucher"], categories:{housing:4.0,financial:3.8}, narrow:true,
+       situational:true, browse:false},
+      /* Medication-assisted treatment is an addiction service: a request about
+         prescribed medication does not ask for it, though the words overlap. */
+      {phrases:["medication assisted treatment","medication assisted","opioid treatment"], categories:{recovery:4.5}, narrow:true},
+      /* Misuse of pills by their everyday name ("misuse of pain pills",
+         "hooked on painkillers") is help with substance use. */
+      {phrases:["pill addiction","painkiller addiction","prescription drug abuse","prescription drug misuse"],
+       patterns:[/\b(?:misus\w*|abus(?:e|es|ing|ed)|addicted to|addiction to|hooked on|dependent on)(?: of| on| to)? (?:my |her |his |their |the )?(?:pain pills|pills|painkillers|pain killers|prescription pills|prescription drugs|pain medication|pain meds)\b/],
+       categories:{recovery:4.0}, expand:["addiction","substance"]},
       {phrases:["utility assistance","utility bill","utility bills","light bill","power bill","electric bill","gas bill",
                 "water bill","heating bill","shutoff","shutoffs","shut off"], categories:{financial:4.0,housing:2.0}, narrow:true},
       {phrases:["school physical","sports physical","work physical"], categories:{health:4.5}, narrow:true},
@@ -851,6 +890,115 @@ function conceptWordsIn(text, concept) {
   return words;
 }
 
+/* A named drug taken as prescribed ("i take oxycodone exactly as my doctor
+   prescribed it") or one the person is not using ("my son is not using
+   heroin") is not a request for addiction help, so it is not searched for.
+   Each statement is judged on its own: the query's clause breaks (and "but")
+   separate statements, so "I take prescribed medication. My son needs help
+   with heroin" keeps the son's request.
+   - Prescribed: a drug that can be prescribed, in the same statement as
+     "prescribed"/"prescription". Stated misuse anywhere in the request
+     ("addicted to her prescribed oxycodone", "taking more than prescribed")
+     keeps every drug searched.
+   - Denied: the drug that is the object of a negated use ("not using
+     heroin", "has never used heroin or meth"); other drugs are unaffected.
+   A comma before words that only describe that use ("I take oxycodone, as
+   prescribed", ", exactly as my doctor prescribed", ", daily") does not
+   start a new statement.
+   The rest of an ordinary medication statement ("my mother takes
+   medication every day", "for pain") says how a medicine is taken, not what
+   help is wanted. Those words are returned as `statement` and, like a
+   benign statement's words, only their service words are searched, so
+   "every day" cannot match "Up to 90 days" or a day center. The statement
+   ends at a request or a new clause ("and need a ride"). */
+const SUBSTANCE_WORDS = new Set(["heroin","fentanyl","fent","opioid","opioids","opiate","opiates","oxycodone","oxycontin",
+  "percocet","percocets","meth","methamphetamine","cocaine","marijuana","xanax","benzos","drugs","alcohol"]);
+const PRESCRIBABLE_SUBSTANCES = new Set(["opioid","opioids","opiate","opiates","oxycodone","oxycontin","percocet","percocets","xanax","benzos"]);
+const SUBSTANCE_MISUSE = /\b(?:addict|addicts|addicted|addiction|abuse|abuses|abusing|abused|misuse|misuses|misusing|misused|hooked|dependent|dependence|withdrawal|withdrawals|detox|rehab|overdos\w*|too many|too much|stop|stopping|quit|quitting|sober|clean)\b|\b(?:more|higher|larger|stronger) than (?:[a-z]+ ){0,4}prescribed\b|\bnot as prescribed\b/;
+const SUBSTANCE_DENIALS = new Set(["not","isnt","never","doesnt","dont","didnt","wasnt","arent","havent","hasnt"]);
+const SUBSTANCE_USE_VERBS = new Set(["using","use","used","taking","take","took","on","drinking","drink","drank","doing","do","did"]);
+const SUBSTANCE_LIST_WORDS = new Set(["or","and","nor","any","the","his","her","their","my","some"]);
+const MEDICATION_USE_MODIFIER = /^(?:(?:exactly|just|only|always) )?(?:as (?:prescribed|directed|instructed|told|my|the|his|her|their)|per (?:my|the|his|her|their) (?:doctor|prescription|pharmacist))\b|^(?:daily|every (?:day|morning|night|evening)|each (?:day|morning|night)|once a day|twice a day)\b/;
+const MEDICATION_WORDS = new Set([...PRESCRIBABLE_SUBSTANCES, "medication","medications","medicine","medicines","meds","prescription","prescriptions","pills"]);
+const MEDICATION_USE_VERBS = new Set(["take","takes","taking","took","prescribed","on"]);
+const STATEMENT_REQUEST_WORDS = new Set(["and","so","because","need","needs","want","wants","looking","help","where","how","can","could","please"]);
+function routineSubstanceUse(clause, breaks, toToken, tokens) {
+  const routine = new Set();
+  const statement = new Set();
+  const word = i => toToken.has(i) ? tokens[toToken.get(i)] : clause[i];
+  const misuse = SUBSTANCE_MISUSE.test(tokens.join(" "));
+  const statements = [];
+  let start = 0;
+  clause.forEach((w, i) => {
+    const modifier = breaks[i] && MEDICATION_USE_MODIFIER.test(clause.slice(i, i + 6).join(" "));
+    if (i && (breaks[i] || w === "but") && !modifier) { statements.push([start, i]); start = i; }
+  });
+  statements.push([start, clause.length]);
+  statements.forEach(([from, to]) => {
+    let prescribed = false;
+    for (let i = from; i < to; i++) if (/^prescri(?:bed|ption|ptions)$/.test(word(i))) prescribed = true;
+    /* An ordinary medication statement: a medicine and its use, no misuse. */
+    if (!misuse) {
+      for (let v = from; v < to; v++) {
+        if (!MEDICATION_USE_VERBS.has(word(v))) continue;
+        let a = v, b = v;
+        while (a > from && !STATEMENT_REQUEST_WORDS.has(word(a - 1))) a--;
+        while (b + 1 < to && !STATEMENT_REQUEST_WORDS.has(word(b + 1))) b++;
+        let medicine = false;
+        for (let i = a; i <= b; i++) if (MEDICATION_WORDS.has(word(i))) medicine = true;
+        if (medicine) for (let i = a; i <= b; i++) if (toToken.has(i)) statement.add(toToken.get(i));
+      }
+    }
+    for (let i = from; i < to; i++) {
+      const w = word(i);
+      if (!SUBSTANCE_WORDS.has(w) || !toToken.has(i)) continue;
+      let v = i - 1;
+      while (v >= from && (SUBSTANCE_WORDS.has(word(v)) || SUBSTANCE_LIST_WORDS.has(word(v)))) v--;
+      const denied = v >= from && SUBSTANCE_USE_VERBS.has(word(v)) &&
+        [v - 1, v - 2].some(n => n >= from && SUBSTANCE_DENIALS.has(word(n)));
+      if (denied || (prescribed && !misuse && PRESCRIBABLE_SUBSTANCES.has(w))) routine.add(toToken.get(i));
+    }
+  });
+  return {substances: routine, statement};
+}
+
+/* The person who needs help, as far as the request states it: the speaker
+   ("i am an adult man", "im a single mother"), someone the request is
+   definitely for ("for my daughter", "my adult son needs", "help my
+   daughter find") or a requested men's/women's program. Other people
+   mentioned say nothing about who needs help: "my husband hits me", or a
+   helper ("my daughter is helping me find housing", where the speaker of
+   unstated sex needs it). Sex is known only when every stated recipient
+   agrees; adulthood only from an adult word, an age of 18 or more, or a
+   role that is an adult (mother, husband). Nothing else is inferred. */
+const RECIPIENT_WORD = String.raw`(?:adult |grown |\d{1,2} ?(?:years? ?old|yrs? ?old|yo) )?(son|daughter|boy|girl|husband|wife|mother|mom|father|dad|brother|sister|grandma|grandpa|grandmother|grandfather|man|woman)`;
+const RECIPIENT_PATTERNS = [
+  new RegExp(String.raw`\bfor (?:my|our) ${RECIPIENT_WORD}\b`, "g"),
+  new RegExp(String.raw`\b(?:my|our) ${RECIPIENT_WORD} (?:is \d{1,2}(?: years? old)? and )?(?:is |s )?(?:needs|need|wants|looking|seeking|requires|has nowhere|homeless)\b`, "g"),
+  new RegExp(String.raw`\bhelp(?:ing|s|ed)? (?:my|our) ${RECIPIENT_WORD} (?:to )?(?:find|get|look)\b`, "g")
+];
+const PERSON_SEX = {man:"male", men:"male", male:"male", guy:"male", father:"male", dad:"male", husband:"male", son:"male", boy:"male",
+  brother:"male", grandpa:"male", grandfather:"male", woman:"female", women:"female", female:"female", lady:"female", mother:"female",
+  mom:"female", wife:"female", daughter:"female", girl:"female", sister:"female", grandma:"female", grandmother:"female"};
+const ADULT_PERSON = new Set(["man","men","woman","women","guy","lady","father","dad","mother","mom","husband","wife",
+  "grandpa","grandfather","grandma","grandmother"]);
+function statedPerson(normalized, statedAges, explicitMinor) {
+  const words = new Set();
+  RECIPIENT_PATTERNS.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(normalized))) words.add(match[1]);
+  });
+  const self = normalized.match(/\b(?:i am|im) (?:a |an )?(?:[a-z]+ ){0,2}?(man|woman|male|female|guy|lady|mother|mom|father|dad|husband|wife)\b/);
+  if (self) words.add(self[1]);
+  const program = normalized.match(/\b(mens|womens)\b/);
+  if (program) words.add(program[1] === "mens" ? "man" : "woman");
+  const sexes = new Set([...words].map(word => PERSON_SEX[word]).filter(Boolean));
+  return {
+    sex: sexes.size === 1 ? [...sexes][0] : null,
+    adult: !explicitMinor && ([...words].some(word => ADULT_PERSON.has(word)) || statedAges.some(age => age >= 18) || /\badult\b/.test(normalized))
+  };
+}
+
 function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const lexicon = SEARCH_LEXICONS[language] || SEARCH_LEXICONS.en;
   const vocabulary = buildSearchVocabulary(lexicon);
@@ -963,12 +1111,13 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      only at the positions that statement occupies: "dinner" in a separate
      "i need dinner tonight" is still searched. */
   const clauseToToken = alignClauseWords(clause, rawTokens);
+  const {substances: routineSubstance, statement: medicationStatement} = routineSubstanceUse(clause, breaks, clauseToToken, correctedTokens);
   const toTokenPositions = positions => new Set([...positions].map(i => clauseToToken.get(i)).filter(i => i !== undefined));
   const benignPositions = toTokenPositions(masked);
   const crisisTokenPositions = toTokenPositions(crisisPositions);
   const baseTokens = [
-    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) && !requestVerbUses.has(i) &&
-      (!(crisisTokenPositions.has(i) || benignPositions.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
+    ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) && !requestVerbUses.has(i) && !routineSubstance.has(i) &&
+      (!(crisisTokenPositions.has(i) || benignPositions.has(i) || medicationStatement.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
@@ -996,6 +1145,24 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const beneficiaryPattern = /\b(?:for|with) (?:my |our |the |his |her |their |a )?(kids|kid|children|child|son|daughter|baby|babies|family|mom|dad|mother|father|grandma|grandpa|husband|wife|women|woman|men|man|veterans|veteran|seniors|senior)\b/g;
   let beneficiaryMatch;
   while ((beneficiaryMatch = beneficiaryPattern.exec(normalized))) beneficiaryWords.add(beneficiaryMatch[1]);
+  /* "someone in my family", "a family member": who the help is for, not a
+     request for family services. */
+  if (/\b(?:in|of) (?:my|our) family\b|\bfamily members?\b/.test(normalized)) beneficiaryWords.add("family");
+  /* "my child needs addiction treatment": the child is who needs the help,
+     the same as "treatment for my child"; it is not a request for children's
+     services. Nothing about age is assumed. */
+  const subjectPattern = /\b(?:my|our) (?:adult |grown |\d{1,2} ?(?:years? ?old|yrs? ?old|yo) )?(kids|kid|children|child|son|daughter|baby|teen|teenager)\b/g;
+  while ((beneficiaryMatch = subjectPattern.exec(normalized))) beneficiaryWords.add(beneficiaryMatch[1]);
+  /* An age stated for that person ("my 14 year old", "my son is 17", "a
+     minor"). It is used only so a program documented as adults-only does not
+     lead a request for someone under 18. "Teenager", "son" or "child" alone
+     state no age, and nothing is inferred about other programs' ages. */
+  const statedAges = [];
+  normalized.replace(/\b(\d{1,2}) ?(?:years? ?old|yrs? ?old|yo)\b/g, (m, age) => statedAges.push(Number(age)));
+  normalized.replace(/\b(?:my|our|a|the) (?:son|daughter|child|kid|boy|girl|teen|teenager|grandson|granddaughter|stepson|stepdaughter|nephew|niece|brother|sister)(?: is| s)?(?: only| just)? (\d{1,2})\b(?! (?:days?|weeks?|months?|years?|times|hours?|minutes?|dollars|percent|pills|mg)\b)/g,
+    (m, age) => statedAges.push(Number(age)));
+  const explicitMinor = statedAges.some(age => age > 0 && age < 18) || /\bunder ?18\b|\b(?:is|s) (?:a )?minor\b|\bunderage\b/.test(normalized);
+  const person = statedPerson(normalized, statedAges, explicitMinor);
   const otherNeed = allIntentTokens.some(token => !beneficiaryWords.has(token) &&
     Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token) >= SEARCH_NEED_STRENGTH)) ||
     detectPhraseConcepts(normalized, lexicon).length > 0 || signals.length > 0;
@@ -1125,6 +1292,11 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
     wordFrequency: frequency,
     normalized,
     correctedText,
+    /* The request without prescribed or denied drug mentions: the drugs it
+       actually asks about. */
+    activeSubstanceText: [rawTokens, correctedTokens].map(list => list.filter((_, i) => !routineSubstance.has(i)).join(" ")).join(" "),
+    explicitMinor,
+    person,
     tokens: meaningfulTokens,
     tokenInfo,
     strongTokens,
@@ -1249,9 +1421,17 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
   const requestWords = analysis.requestWords;
   /* Only a listing outside the requested categories can be "another
      service"; Pet Food Pantry is the right answer for "feed my dog". */
-  const otherService = !analysis.categoryScores[resource.category] &&
+  /* Likewise a residential recovery program (by its own tags: sober living,
+     recovery or transitional housing) outside the requested categories,
+     when no place to live is asked for: what it matched ("mental health" in
+     "housing for adults with co-occurring mental health and substance use
+     disorders", for "anxiety") describes its residents and who is eligible,
+     not a service it offers. Housing requests are unaffected. */
+  const outsideRequest = !analysis.categoryScores[resource.category];
+  const otherService = outsideRequest && (
     conceptPhrasesInNameAndTags(resource, fields, lexicon).some(({concept, words}) =>
-      !intended.some(category => concept.categories[category]) && words.some(word => requestWords.has(word)));
+      !intended.some(category => concept.categories[category]) && words.some(word => requestWords.has(word))) ||
+    (RECOVERY_HOUSING_TAGS.test(fields.tags) && !RECOVERY_HOUSING_REQUEST.test(analysis.normalized)));
 
   let weakScore = 0;
   /* A rare, non-category word this listing names ("welding", "breakfast"):
@@ -1521,6 +1701,47 @@ const RESTRICTED_AUDIENCE = new RegExp([
 function restrictedAudience(resource) {
   return RESTRICTED_AUDIENCE.test(`${resource.requirements || ""} ${resource.description || ""}`.toLowerCase());
 }
+/* Residential recovery programs, by their own tags, and words that ask for
+   somewhere to live, so those programs lead only when housing is wanted. */
+const RECOVERY_HOUSING_TAGS = /\b(?:sober living|recovery housing|transitional housing|halfway house)\b/;
+const RECOVERY_HOUSING_REQUEST = /\b(?:living|housing|house|houses|home|homes|halfway|residential|transitional|stay|live|bed|beds|room|shelter)\b/;
+/* A listing whose documented treatment is for opioids only (WIN Recovery:
+   "opioid use disorder") is not general substance-use treatment. When a
+   request names only other substances (meth, alcohol), general treatment
+   comes first; the opioid program stays listed. */
+const OPIOID_REQUEST = /\b(?:opioids?|opiates?|heroin|fentanyl|fent|oxycodone|oxycontin|percocets?|oxy|oxys|methadone|suboxone|pain pills|painkillers?|pain killers)\b/;
+const OTHER_SUBSTANCE_REQUEST = /\b(?:meth|methamphetamine|cocaine|crack|marijuana|weed|alcohol|alcoholic|alcoholism|drinking|drunk|xanax|benzos)\b/;
+const GENERAL_SUBSTANCE_SCOPE = /\b(?:substance|addiction|drug|drugs|alcohol|alcoholics)\b/;
+function opioidOnlyScope(resource) {
+  const text = normalizeSearchText(`${resource.name || ""} ${resource.description || ""} ${(resource.tags || []).join(" ")}`);
+  return /\bopioids?\b/.test(text) && !GENERAL_SUBSTANCE_SCOPE.test(text);
+}
+/* A listing documented as serving adults only: an age ("Must be 18 or
+   older", "18+", "minimum age 18") or the people it is for ("sober living
+   for adult males", "housing for adults with co-occurring disorders",
+   "primary care for uninsured adults"). "Adult" naming a kind of program
+   ("adult education", "Adult High School Diploma") is not a restriction.
+   For a request about someone stated to be under 18 such a listing comes
+   after the others, with its requirement still shown on the card. */
+const ADULTS_ONLY = /\bmust be (?:18|19|21)\b|\b(?:18|19|21) ?(?:\+|or older|and older|or over|and over)|\badults? only\b|\bminimum age (?:of )?(?:18|19|21)\b|\bfor (?:[a-z-]+ ){0,3}(?:adults\b|adult (?:males?|females?|men|women)\b)/;
+function adultsOnly(resource) {
+  return ADULTS_ONLY.test(`${resource.requirements || ""} ${resource.description || ""}`.toLowerCase());
+}
+/* A listing whose own text limits it to a group ("Women and children
+   only", "Men only") excludes a stated person outside that group: an adult
+   man for "Women and children only", a woman for "Men only". A person whose
+   sex or age is not stated is never excluded; a son of unstated age may be
+   a child. Listings without such a statement are unknown, not excluded. */
+const AUDIENCE_ONLY = /\b(women|men|mothers|fathers|children|kids)(?: and (women|men|children|kids))? only\b/;
+function audienceConflict(resource, person) {
+  if (!person || !person.sex) return false;
+  const match = AUDIENCE_ONLY.exec(`${resource.requirements || ""} ${resource.description || ""}`.toLowerCase());
+  if (!match) return false;
+  const allowed = new Set([match[1], match[2]].filter(Boolean));
+  const sexAllowed = person.sex === "male" ? allowed.has("men") || allowed.has("fathers") : allowed.has("women") || allowed.has("mothers");
+  const childAllowed = (allowed.has("children") || allowed.has("kids")) && !person.adult;
+  return !sexAllowed && !childAllowed;
+}
 /* Words that name a group, so a group-limited listing may be what was asked for. */
 const SEARCH_GROUP_WORDS = /\b(?:women|woman|womens|men|man|mens|mother|mothers|mom|moms|father|dad|child|children|kid|kids|baby|babies|student|students|school|senior|seniors|elderly|veteran|veterans|pregnant|homebound|grandma|grandpa|family|families)\b/;
 
@@ -1627,11 +1848,15 @@ function searchResources(resources, rawQuery, language = "en") {
   const accepted = [];
   urgentKinds.forEach((kind, k) => accepted.push(...take(item => evidenceFor(item) === k)));
   accepted.push(...take(item => item.organization > 0).sort((a, b) => b.organization - a.organization || filtered.indexOf(a) - filtered.indexOf(b)));
+  /* A program whose documented eligibility excludes the stated person
+     (adults only for someone under 18; "Women and children only" for an
+     adult man) is never picked to represent a need; it is ordered last below. */
+  const ineligible = item => (analysis.explicitMinor && adultsOnly(item.resource)) || audienceConflict(item.resource, analysis.person);
   if (needs.length >= 2) {
-    accepted.push(...take(item => needs.every(need => item.coveredNeeds.has(need))));
+    accepted.push(...take(item => !ineligible(item) && needs.every(need => item.coveredNeeds.has(need))));
     const bests = needs
       .filter(need => !accepted.some(item => item.coveredNeeds.has(need)))
-      .map(need => pool.find(item => item.coveredNeeds.has(need)))
+      .map(need => pool.find(item => !ineligible(item) && item.coveredNeeds.has(need)))
       .filter((item, i, list) => item && list.indexOf(item) === i)
       .sort((a, b) => filtered.indexOf(a) - filtered.indexOf(b));
     accepted.push(...take(item => bests.includes(item)).sort((a, b) => filtered.indexOf(a) - filtered.indexOf(b)));
@@ -1644,14 +1869,32 @@ function searchResources(resources, rawQuery, language = "en") {
      every card; nothing is removed for it. */
   const openFirst = !fitting && !SEARCH_GROUP_WORDS.test(analysis.normalized) &&
     (requiredConcepts.some(concept => concept.openFirst) || needs.includes("food"));
+  /* Help with substance use, when housing was not asked for: treatment and
+     recovery-navigation services before residential programs (sober living,
+     recovery and transitional housing). Nothing is removed. */
+  const residentialLast = needs.includes("recovery") && !RECOVERY_HOUSING_REQUEST.test(analysis.normalized);
+  /* Judged on the drugs the request asks about, not ones it says are
+     prescribed or not used ("not using heroin but needs meth treatment"). */
+  const requestText = analysis.activeSubstanceText;
+  const otherSubstanceOnly = OTHER_SUBSTANCE_REQUEST.test(requestText) && !OPIOID_REQUEST.test(requestText);
   accepted.push(...pool.map((item, index) => ({item, index,
-    fit: fitting && item.beneficiaryFit ? 0 : 1,
+    /* The person named ("for my kids", "my child") orders listings that
+       serve the request; it never moves another service (child welfare for
+       a treatment request) ahead of them. */
+    fit: fitting && item.beneficiaryFit && (item.hasContent || analysis.broadCategories.has(item.resource.category)) ? 0 : 1,
     fallback: item.fallbackHit && !item.requiredHit ? 1 : 0,
+    /* Only listings that serve the request (its category, or a specific
+       match such as CARES or Hamilton Center) move ahead of residential
+       programs; an incidental match ("Vocational Rehab") does not. */
+    residential: residentialLast && (RECOVERY_HOUSING_TAGS.test(normalizeSearchText((item.resource.tags || []).join(" "))) ||
+      !(item.specific || needs.includes(item.resource.category))) ? 1 : 0,
+    scope: otherSubstanceOnly && opioidOnlyScope(item.resource) ? 1 : 0,
+    adultOnly: ineligible(item) ? 1 : 0,
     /* Not when the request names that very program ("free and reduced lunch"). */
     open: openFirst && !item.narrowConceptHit && restrictedAudience(item.resource) ? 1 : 0,
     tier: analysis.wantsFree ? (item.specific ? 0 : 1) : 0,
     cost: analysis.wantsFree ? costRank[documentedCost(item.resource, analysis)] : 0
-  })).sort((a, b) => a.fit - b.fit || a.fallback - b.fallback || a.open - b.open || a.tier - b.tier || a.cost - b.cost || a.index - b.index).map(entry => entry.item));
+  })).sort((a, b) => a.adultOnly - b.adultOnly || a.residential - b.residential || a.fit - b.fit || a.fallback - b.fallback || a.scope - b.scope || a.open - b.open || a.tier - b.tier || a.cost - b.cost || a.index - b.index).map(entry => entry.item));
 
   return {
     status:"ok",
@@ -1690,6 +1933,23 @@ function announce(message){
   window.setTimeout(() => { region.textContent = message; }, 120);
 }
 
+/* Directions are offered only for an address a map can find: a street
+   number and street, or a named public landmark. Text that says the place
+   is given at intake, by referral, by phone, online, in a directory, in an
+   approximate area, at many places, or is confidential is shown as written
+   but never turned into a directions link. */
+const NOT_A_DESTINATION = /confidential|phone|call for|online|mobile advocacy|referral|intake|throughout|directory|\barea\b|multiple|various|\bvaries\b|\bvia\b|door-to-door/i;
+const STREET_ADDRESS = /\b\d+(?: \d\/\d)? (?:[NSEW]\.? )?[A-Za-z0-9]/;
+/* "Vigo County Library" names one building in this directory: the listings
+   that use it share the main library's phone with the One Library Square
+   listing (legal-003). */
+const PUBLIC_LANDMARK = /\b(?:One Library Square|Vigo County Courthouse|Vigo County Library)\b/i;
+function hasNavigableAddress(address) {
+  const text = String(address || "").trim();
+  if (!text || NOT_A_DESTINATION.test(text)) return false;
+  return STREET_ADDRESS.test(text) || PUBLIC_LANDMARK.test(text);
+}
+
 function renderCard(r) {
   const m = CATEGORY_META[r.category] || {label:r.category,icon:"",badge:"",bar:""};
   const telHref = r.phone ? esc(String(r.phone).replace(/\D/g,"")) : "";
@@ -1709,7 +1969,7 @@ function renderCard(r) {
   const updated = r.lastVerified
     ? `<div class="rc-updated">Verified ${esc(r.lastVerified)}</div>` : "";
 
-  const noConf  = r.address && !/(confidential|phone only|call for|online|mobile advocacy)/i.test(r.address);
+  const noConf  = hasNavigableAddress(r.address);
 
   /* A11Y (2.4.4 / 2.4.9): each action link carries the organisation name in its
      accessible name, so "Call now" repeated 134 times is distinguishable when a
