@@ -382,6 +382,52 @@ async function loadPageAt(page, width) {
   }, {kind:"layout"});
 });
 
+/* Bus page jump links land below the sticky crisis bar and header. */
+[320, 375, 768, 1280].forEach(width => {
+  ui("navigation", `bus page jump links clear the sticky header at ${width}px`, async () => {
+    const f = [];
+    try {
+      for (const target of ["routes", "before"]) {
+        await loadPageAt("bus.html", width);
+        await pause(300);
+        const d = D(), link = d.querySelector(`.bus-actions a[href="#${target}"]`);
+        if (!link) { f.push(`no jump link to #${target}`); continue; }
+        /* Headless browsers stall smooth scrolling; the landing position
+           (scroll-margin against the sticky header) is what is checked. */
+        d.documentElement.style.scrollBehavior = "auto";
+        link.click();
+        await pause(1500);
+        const chromeBottom = d.querySelector(".site-chrome").getBoundingClientRect().bottom;
+        const top = d.getElementById(target).getBoundingClientRect().top;
+        if (top < chromeBottom - 1) f.push(`#${target} top ${Math.round(top)}px is under the header (bottom ${Math.round(chromeBottom)}px)`);
+        if (top > W().innerHeight / 2) f.push(`#${target} did not scroll into view (top ${Math.round(top)}px)`);
+      }
+      /* Arriving with the fragment in the address (a shared /bus#before link). */
+      for (const target of ["routes", "before"]) {
+        frame.style.width = `${width}px`;
+        await new Promise(resolve => { frame.onload = resolve; frame.src = `../../bus.html?ui=${Date.now()}#${target}`; });
+        await pause(2500);
+        const d = D();
+        const chromeBottom = d.querySelector(".site-chrome").getBoundingClientRect().bottom;
+        const top = d.getElementById(target).getBoundingClientRect().top;
+        const atEnd = W().scrollY + W().innerHeight >= d.documentElement.scrollHeight - 2;
+        if (top < chromeBottom - 1) f.push(`fresh load: #${target} top ${Math.round(top)}px is under the header (bottom ${Math.round(chromeBottom)}px)`);
+        if (top > W().innerHeight / 2 && !atEnd) f.push(`fresh load: #${target} not in view (top ${Math.round(top)}px)`);
+        /* Reloading the same address keeps the target clear of the header. */
+        await new Promise(resolve => { frame.onload = resolve; W().location.reload(); });
+        await pause(2500);
+        const r = D();
+        const reloadChrome = r.querySelector(".site-chrome").getBoundingClientRect().bottom;
+        const reloadTop = r.getElementById(target).getBoundingClientRect().top;
+        const reloadAtEnd = W().scrollY + W().innerHeight >= r.documentElement.scrollHeight - 2;
+        if (reloadTop < reloadChrome - 1) f.push(`reload: #${target} top ${Math.round(reloadTop)}px is under the header (bottom ${Math.round(reloadChrome)}px)`);
+        if (reloadTop > W().innerHeight / 2 && !reloadAtEnd) f.push(`reload: #${target} not in view (top ${Math.round(reloadTop)}px)`);
+      }
+    } finally { frame.style.width = ""; }
+    return f;
+  }, {kind:"navigation"});
+});
+
 ui("homepage", "the Free / Always statistic is gone; resource and category counts remain", async () => {
   const labels = [...D().querySelectorAll(".hero-stat-label")].map(el => el.textContent.trim());
   const nums = [...D().querySelectorAll(".hero-stat-num")].map(el => el.textContent.trim());

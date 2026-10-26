@@ -561,7 +561,53 @@ const CASES = [
   ["ride to the doctor", [expect.busRoute(false), expect.returned("transport-002")]],
   ["medical ride", [expect.busRoute(false)]],
   ["greyhound bus to indianapolis", [expect.busRoute(false), expect.returned("transport-007")]],
-  ["gas voucher", [expect.busRoute(false)]]
+  ["gas voucher", [expect.busRoute(false)]],
+
+  /* Relevance repair. Somewhere to sleep tonight: overnight shelter and
+     emergency lodging only, open-to-anyone first, 2-1-1 last as the next
+     call. A day center, rent help, Section 8 or long-term housing is not a
+     bed tonight. */
+  ...["somewhere to sleep tonight", "i need a place to stay tonight", "emergency shelter", "homeless tonight",
+      "where can i sleep tonight", "need a bed for tonight", "i have nowhere to sleep", "sleeping outside tonight",
+      "im homeless and need somewhere to stay tonight", "is there a shelter open tonight"].map(query => [query, [
+    expect.firstOneOf(["housing-002", "food-006"]), expect.returned("housing-001"),
+    expect.absent("housing-006"), expect.absent("housing-004"), expect.absent("housing-003"), expect.absent("housing-007"),
+    expect.absent("education-004"), expect.absent("crisis-003"),
+    expect.before("housing-002", "crisis-005"), expect.before("housing-001", "crisis-005"),
+    expect.before("food-006", "housing-001"), expect.urgent(null)]]),
+  /* ...while daytime, long-term and group requests keep their own answers */
+  ["day shelter", [expect.first("housing-006")]],
+  ["womens shelter", [expect.first("housing-001")]],
+  ["rental assistance", [expect.firstOneOf(["housing-004", "housing-003"])]],
+  ["section 8", [expect.returned("housing-003")]],
+  ["homeless", [expect.returned("housing-006"), expect.returned("housing-002")]],
+  /* Mixed: food and a bed tonight both answered */
+  ["i need food and somewhere to sleep tonight", [expect.returned("housing-002"), expect.anyReturned(["food-001", "food-003", "food-009"]),
+    expect.absent("housing-004"), expect.absent("housing-006")]],
+
+  /* Meals: public meals before meals limited to a group, and a residential
+     program's meals for its residents are not a meal service */
+  ["free meals", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.returned("food-005"),
+    expect.before("food-007", "food-005"), expect.absent("recovery-010")]],
+  ["i need a meal", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.absent("recovery-010"),
+    expect.before("food-007", "senior-001")]],
+  ["hot meal today", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.absent("recovery-010")]],
+  ["i need food today", [expect.sameOrderAs("food")]],
+  ["food pantry near me", [expect.topCategories(["food"], 8)]],
+  /* ...the program asked for by name, or a named group, still comes first */
+  ["free and reduced lunch", [expect.first("food-005")]],
+  ["meals for seniors", [expect.first("senior-001")]],
+  ["sober living with meals", [expect.returned("recovery-010")]],
+
+  /* Transportation: city bus requests lead to the bus guide and the city
+     bus service first; Greyhound and Area 7 stay distinct */
+  ...["terre haute bus schedule", "city bus routes", "where is the bus station", "bus transfer center",
+      "bus schedule pdf", "how do i ride the city bus"].map(query => [query, [
+    expect.busRoute(true), expect.first("transport-001"), expect.absent("education-011"), expect.absent("crisis-001")]]),
+  ["where is the bus station", [expect.returned("transport-007")]],
+  ["greyhound", [expect.busRoute(false), expect.first("transport-007")]],
+  ["ride for seniors", [expect.busRoute(false), expect.first("transport-003")]],
+  ["wheelchair ride to the doctor", [expect.busRoute(false), expect.anyInTop(["transport-002", "transport-003"], 2)]]
 ];
 
 function runSuite() {
@@ -672,6 +718,20 @@ function runSuite() {
   const eligibilityOk = gasCard.includes("Proof of employment offer.");
   rows.push({query:"(employment-006 card shows its eligibility requirement)", result:{ids:[], urgent:null}, failures: eligibilityOk ? [] : ["requirement not shown"]});
   if (!eligibilityOk) failed++;
+
+  /* Directory corrections: the address shown and the Directions destination agree. */
+  const dataChecks = [];
+  const greyhoundCard = renderCard(RESOURCES.find(r => r.id === "transport-007"));
+  if (!greyhoundCard.includes("750 Cherry St, Terre Haute, IN 47807")) dataChecks.push("Greyhound card does not show 750 Cherry St");
+  if (!greyhoundCard.includes("maps.google.com/?q=750%20Cherry%20St%2C%20Terre%20Haute%2C%20IN%2047807")) dataChecks.push("Greyhound directions do not go to 750 Cherry St");
+  const areaSeven = RESOURCES.find(r => r.id === "transport-003");
+  const areaSevenCard = renderCard(areaSeven);
+  if (areaSevenCard.includes("maps.google.com")) dataChecks.push("Area 7 card offers directions to a place that is not a pickup point");
+  if (areaSeven.phone !== "812-232-2675") dataChecks.push(`Area 7 phone ${areaSeven.phone}`);
+  const oldAddress = RESOURCES.filter(r => /700 S\.? 7th/i.test(`${r.address} ${r.description}`)).map(r => r.id);
+  if (oldAddress.length) dataChecks.push(`700 S 7th St still listed: ${oldAddress.join(" ")}`);
+  rows.push({query:"(Greyhound and Area 7 directory corrections)", result:{ids:[], urgent:null}, failures:dataChecks});
+  if (dataChecks.length) failed++;
 
   return {rows, failed, total: rows.length};
 }

@@ -80,9 +80,40 @@
     }
   }
 
+  /* ── Arriving at a #fragment — supports WCAG 2.4.11 ──
+     The browser jumps to the target before webfonts load; the text above it
+     then grows and pushes the target down, out of view. Once fonts are ready,
+     re-align the target, unless the visitor has already scrolled. */
+  function initFragmentAlignment() {
+    /* A malformed fragment ("#%E0") makes decodeURIComponent throw; such a
+       link has no target to align, so the page is simply left as loaded. */
+    var id;
+    try { id = decodeURIComponent((window.location.hash || "").slice(1)); }
+    catch (e) { return; }
+    var target = id && document.getElementById(id);
+    if (!target || !document.fonts || !document.fonts.ready) return;
+    var moved = false;
+    function onScrollIntent() { moved = true; }
+    ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (type) {
+      window.addEventListener(type, onScrollIntent, { once: true, passive: true });
+    });
+    /* The short delay lets the sticky-offset measurement above, which also
+       waits for fonts, update scroll-margin-top first. */
+    document.fonts.ready.then(function () {
+      window.setTimeout(function () {
+        if (moved) return;
+        /* "instant": a one-off correction, not a smooth scroll the visitor
+           watches. Older browsers without it get the plain call. */
+        try { target.scrollIntoView({ behavior: "instant", block: "start" }); }
+        catch (e) { target.scrollIntoView(true); }
+      }, 150);
+    }).catch(function () {});
+  }
+
   function init() {
     initSkipLink();
     initStickyOffset();
+    initFragmentAlignment();
   }
 
   if (document.readyState === "loading") {

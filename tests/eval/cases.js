@@ -83,7 +83,11 @@ const EVAL_CASES = (() => {
   housing("service", "stranded", {first:"housing-002"});
   housing("service", "utility shutoff", {top:["housing-004","crisis-003"], n:3});
   housing("everyday", "i got nowhere to sleep tonight", {any:["housing-002","housing-001"], not:["crisis-004"]});
-  housing("everyday", "sleeping in my car", {any:["housing-002","housing-001","housing-006"], cats:{in:["housing","crisis"], n:3}});
+  /* Corrected (relevance repair): the old expectation required Housing/Crisis categories in the top 3,
+     but Light House Mission's food-006 listing documents "emergency shelter … Shelter intake is 24/7",
+     so a category test excluded a real overnight shelter. The intent kept: an overnight shelter first,
+     no car-repair listing. Original: any housing-002/housing-001/housing-006, cats {in:[housing,crisis], n:3}. */
+  housing("everyday", "sleeping in my car", {first:["housing-002","food-006","housing-001"], notCat:["transportation"]});
   housing("everyday", "need a place to stay", {any:["housing-002","housing-001"]});
   housing("everyday", "getting evicted", {top:["housing-004","legal-004"], n:5});
   housing("everyday", "my landlord is kicking me out", {top:["legal-004","housing-004"], n:5});

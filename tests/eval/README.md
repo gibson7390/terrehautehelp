@@ -88,6 +88,15 @@ Cases with a `known` field fail on purpose until the retrieval problem is fixed.
 | got arrested need lawyer | legal-002 first | Vigo County Public Defender: "Court-appointed representation for criminal cases." | Ranks 13th; the query's words ("arrested", "lawyer") don't reach "criminal" or "public defender". |
 | get my license back | employment-011 first | Fines & Fees Assistance Program: "Help paying court fines to restore driving privileges." | Not returned; "license" instead matches "licensed daycare providers" (children-008). |
 
+### Recorded for the final relevance repair (confirmed 2026-10-25; resolved in the relevance repair)
+
+| Query | Behaviour when recorded | Now |
+|---|---|---|
+| somewhere to sleep tonight / i need a place to stay tonight | Overnight requests also listed Pathways Drop-In Day Center (a day center), CAPWI rental and utility help, Reach Services housing, and Section 8, all matching by category only. | Resolved: an overnight concept requires shelter or emergency-lodging evidence in Housing; listings open to anyone come first and 2-1-1 follows as the next call. Covered by regression tests. |
+| i need a meal (and similar general food requests) | Included Club Soda Sober Living, whose meals are for its residents. | Resolved: the listing's "meals" tag was removed (its description still says meals are provided to residents), and a listing that only mentions a requested service in passing is not shown when listings for the service exist. Meals limited to a group (students, 65+) follow public meals. |
+
+How the relevance repair decides, for reviewers: `phraseConcepts` entries may set `required` (listings in the concept's category must offer it), `fallbackTerms` (a general help line kept last), `openFirst` (listings open to anyone before group-limited ones, unless the query names a group), and `patterns` (wording that varies, such as "a bed for tonight"). Eligibility text is never hidden; it only affects order.
+
 Missing wording in the data (eyeglasses, named treatment medications, current availability, eligibility) does not establish that help is unavailable. Those `gap` cases need data verification, not search changes.
 
 ## Adding cases

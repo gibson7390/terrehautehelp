@@ -424,16 +424,35 @@ const SEARCH_LEXICONS = {
        phrases describe a circumstance, not a service: their words signal the
        category but are not matched against listings individually (so "car"
        in "sleeping in my car" does not find Car Repair). "expand" adds the
-       service word the dataset uses for that circumstance. */
+       service word the dataset uses for that circumstance. "patterns" are
+       regular expressions matched like phrases, for wording that varies.
+       "required" means listings in the concept's category must offer the
+       concept itself: category-only matches are left out. "fallbackTerms"
+       mark a general help line kept, after the real matches, as the next step
+       when no listing can confirm availability. "openFirst" orders listings
+       open to anyone before those limited to a group the person did not
+       name. */
     phraseConcepts: [
+      /* Somewhere to sleep tonight: overnight shelter and emergency lodging
+         only. A day center, rent help or Section 8 is not a bed tonight. No
+         listing confirms a free bed, so 2-1-1 follows as the next call. */
+      {phrases:["emergency shelter","homeless shelter","overnight shelter","night shelter",
+                "no place to sleep","no place sleep","nowhere to sleep","nowhere sleep","no where to sleep",
+                "place to sleep","somewhere to sleep","some where to sleep","anywhere to sleep",
+                "sleeping outside","sleep outside","sleeping on the street","sleeping on the streets","sleeping outdoors",
+                "sleeping in my car","sleeping in car","sleep in my car","living in my car","living in car",
+                "homeless tonight","bed for the night","a bed tonight","bed tonight"],
+       patterns:[
+         /\b(?:sleep|sleeping|stay|staying|shelter|bed|beds|lodging|room)(?: [a-z]+){0,3} (?:tonight|overnight|for the night)\b/,
+         /\b(?:tonight|overnight)(?: [a-z]+){0,3} (?:sleep|stay|shelter|bed)\b/
+       ],
+       serviceTerms:["emergency shelter","emergency lodging","overnight shelter"], fallbackTerms:["211"],
+       categories:{housing:4.5}, narrow:false, situational:true, browse:false, required:true, openFirst:true},
       {phrases:["food pantry","food pantries","soup kitchen"], categories:{food:4.5}, narrow:true},
       {phrases:["food stamps","snap benefits","snap","ebt"], categories:{food:4.5}, narrow:true},
       {phrases:["school lunch","school lunches","school meals","free lunch","reduced lunch","free and reduced"], categories:{food:4.5}, narrow:true},
       {phrases:["meals on wheels","home delivered meals","food delivered","meals delivered","delivered meals"], categories:{senior:5.0}, narrow:true},
-      {phrases:["emergency shelter","homeless shelter"], categories:{housing:4.5,crisis:1.5}, narrow:true},
-      {phrases:["no place to sleep","no place sleep","nowhere to sleep","nowhere sleep"], categories:{housing:4.5,crisis:2.5}, narrow:false},
-      {phrases:["sleeping in my car","sleeping in car","sleep in my car","living in my car","living in car",
-                "place to stay","nowhere to go","no where to go","no place to go","place to live","kicked out"], categories:{housing:4.5}, narrow:false, situational:true},
+      {phrases:["place to stay","nowhere to go","no where to go","no place to go","place to live","kicked out"], categories:{housing:4.5}, narrow:false, situational:true},
       {phrases:["kicking me out","kick me out","kicked me out","kicking us out","kick us out","getting evicted","being evicted"],
        categories:{housing:4.0,legal:2.5}, narrow:false, situational:true, expand:["eviction"]},
       {phrases:["get clean","getting clean","stay clean","quit drinking","stop drinking"], categories:{recovery:4.5}, narrow:false, situational:true},
@@ -475,6 +494,13 @@ const SEARCH_LEXICONS = {
       {phrases:["green card"], categories:{immigration:4.8}, narrow:true, situational:true},
       {phrases:["stay in the country","stay in this country","immigration papers","work permit","work permits","legal status"], categories:{immigration:4.5}, narrow:false, situational:true},
       {phrases:["public transit","bus route","bus routes"], categories:{transportation:4.5}, narrow:true},
+      /* The city bus and where it stops: "bus station", "transfer center",
+         "bus schedule", "ride the bus". The words "station", "center" or
+         "schedule" alone describe many unrelated listings, so they are not
+         searched separately; the request is for the bus. */
+      {phrases:["city bus","bus schedule","bus schedules","bus times","bus stop","bus stops","bus station","bus terminal","bus depot",
+                "transfer center","transfer station","ride the bus","take the bus","catch the bus","bus pass"],
+       serviceTerms:["city bus","public transit"], categories:{transportation:4.5}, narrow:false, situational:true, browse:false, expand:["bus"]},
       /* Somewhere safe to be: shelter and lodging, with no assumption about
          who is asking or why. Abuse support is offered as a separate route
          in the results, not inferred. */
@@ -495,7 +521,8 @@ const SEARCH_LEXICONS = {
       /^(?:the )?(?:bus|buses|busses|city bus|city buses|transit|public transit|bus routes?|bus schedules?)$/,
       /\b(?:bus|buses|busses|transit)\b(?: [a-z]+){0,3} (?:route|routes|schedule|schedules|times|timetable|map|maps|stop|stops|hours)\b/,
       /\b(?:route|routes|schedule|schedules|timetable|map|stops) (?:for |of )?(?:the )?(?:city )?(?:bus|buses|busses|transit)\b/,
-      /\b(?:city bus|city buses|terre haute transit|which bus|what bus|(?:what time|when) does the bus|bus come)\b/
+      /\b(?:city bus|city buses|terre haute transit|which bus|what bus|(?:what time|when) does the bus|bus come)\b/,
+      /\b(?:transfer center|transfer station|bus station|bus terminal|bus depot|ride the bus|take the bus)\b/
     ],
     busRouteExclusions: /\b(?:greyhound|megabus|coach|indianapolis|indy|chicago|louisville)\b/
   }
@@ -805,8 +832,23 @@ function containsPhrase(text, phrase) {
 function detectPhraseConcepts(text, lexicon) {
   if (!text) return [];
   return lexicon.phraseConcepts.filter(concept =>
-    concept.phrases.some(phrase => containsPhrase(text, normalizeSearchText(phrase)))
+    concept.phrases.some(phrase => containsPhrase(text, normalizeSearchText(phrase))) ||
+    (concept.patterns || []).some(pattern => pattern.test(text))
   );
+}
+
+/* The words of a concept's phrases and patterns that occur in the text. */
+function conceptWordsIn(text, concept) {
+  const words = [];
+  concept.phrases.forEach(phrase => {
+    const p = normalizeSearchText(phrase);
+    if (containsPhrase(text, p)) words.push(...p.split(" "));
+  });
+  (concept.patterns || []).forEach(pattern => {
+    const match = text && text.match(pattern);
+    if (match) words.push(...match[0].split(" "));
+  });
+  return words;
 }
 
 function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
@@ -871,10 +913,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   /* Words that form a recognised phrase keep their spelling, so phrase
      context ("stay in the country") wins over single-word correction. */
   detectPhraseConcepts(normalized, lexicon).forEach(concept => {
-    concept.phrases.forEach(phrase => {
-      const p = normalizeSearchText(phrase);
-      if (containsPhrase(normalized, p)) p.split(" ").forEach(word => lockedTokens.add(word));
-    });
+    conceptWordsIn(normalized, concept).forEach(word => lockedTokens.add(word));
   });
 
   const rawTokens = normalized ? normalized.split(" ") : [];
@@ -904,10 +943,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      carries their meaning, so they are not matched against listings. */
   const situationalWords = new Set();
   phraseConcepts.filter(concept => concept.situational).forEach(concept => {
-    concept.phrases.forEach(phrase => {
-      const p = normalizeSearchText(phrase);
-      if (containsPhrase(normalized, p) || containsPhrase(correctedText, p)) p.split(" ").forEach(word => situationalWords.add(word));
-    });
+    [...conceptWordsIn(normalized, concept), ...conceptWordsIn(correctedText, concept)].forEach(word => situationalWords.add(word));
   });
   const expandTokens = phraseConcepts.flatMap(concept => concept.expand || []);
 
@@ -1006,8 +1042,12 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
      category, or a situational phrase whose main category it is (unless the
      phrase asks for one kind of place: "somewhere safe" is shelter, not
      every housing program). */
+  /* A word a non-browsing concept supplies ("bus" for "bus station") names
+     the service, not the whole category. */
+  const conceptOnlyWords = new Set(phraseConcepts.filter(concept => concept.browse === false).flatMap(concept => concept.expand || []));
   const broadCategories = new Set(Object.keys(lexicon.broadTerms).filter(category =>
-    intentTokens.some(token => lexicon.broadTerms[category].includes(token) || lexicon.broadTerms[category].includes(stemSearchWord(token)))
+    intentTokens.some(token => !conceptOnlyWords.has(token) &&
+      (lexicon.broadTerms[category].includes(token) || lexicon.broadTerms[category].includes(stemSearchWord(token))))
   ));
   phraseConcepts.filter(concept => concept.situational && concept.browse !== false).forEach(concept => {
     const entries = Object.entries(concept.categories);
@@ -1265,10 +1305,22 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
 
   let conceptHit = false;
   let narrowConceptHit = false;
+  /* For a required concept: the listing offers it (requiredHit), or is the
+     general help line named as its fallback (fallbackHit). */
+  let requiredHit = false;
+  let fallbackHit = false;
   analysis.phraseConcepts.forEach(concept => {
     /* A listing for another service ("Pet Food Pantry") does not offer the
        requested concept even when its words overlap ("food pantry"). */
+    if (!otherService && concept.fallbackTerms && !resourceContainsConcept(fields, concept) &&
+        concept.fallbackTerms.some(term => containsPhrase(fields.tags, normalizedPhrase(term)) || containsPhrase(fields.name, normalizedPhrase(term)))) {
+      fallbackHit = true;
+      conceptHit = true;
+      score += 8;
+      return;
+    }
     if (otherService || !resourceContainsConcept(fields, concept)) return;
+    if (concept.required) requiredHit = true;
     conceptHit = true;
     if (concept.narrow && !otherService) narrowConceptHit = true;
     if (!otherService) specific = true;
@@ -1327,7 +1379,7 @@ function scoreResourceForQuery(resource, analysis, context = {}) {
   }
 
   return {resource, score, matchedTokens:[...matchedTokens], specific, hasContent, narrowConceptHit, rareSpecific,
-    organization, beneficiaryFit, coveredNeeds,
+    organization, beneficiaryFit, coveredNeeds, requiredHit, fallbackHit,
     categoryIntent:intentStrength > 0, weakOnly:!hasContent && !(intentStrength > 0) && weakScore > 0};
 }
 
@@ -1455,6 +1507,23 @@ function documentedCost(resource, analysis) {
    ordinary service word ("bills" 1.7, "shelter" 2.5) is enough. */
 const SEARCH_NEED_STRENGTH = 1.5;
 
+/* Eligibility limited to a group, as the listing itself states it: "Women
+   and children only", "65+ and homebound", "eligible students", "must be
+   pregnant". "Vigo County residents" or "income limits" are not a group. */
+const RESTRICTED_AUDIENCE = new RegExp([
+  String.raw`\b(?:women|men|mothers|fathers|children|kids|students|seniors|veterans|members)(?: and (?:women|men|children|kids))? only\b`,
+  String.raw`\b\d{2} ?\+`,
+  String.raw`\bhomebound\b`,
+  String.raw`\beligible students\b`,
+  String.raw`\byour child[’']?s school\b`,
+  String.raw`\bmust be (?:pregnant|enrolled|a student|a member|referred)\b`
+].join("|"));
+function restrictedAudience(resource) {
+  return RESTRICTED_AUDIENCE.test(`${resource.requirements || ""} ${resource.description || ""}`.toLowerCase());
+}
+/* Words that name a group, so a group-limited listing may be what was asked for. */
+const SEARCH_GROUP_WORDS = /\b(?:women|woman|womens|men|man|mens|mother|mothers|mom|moms|father|dad|child|children|kid|kids|baby|babies|student|students|school|senior|seniors|elderly|veteran|veterans|pregnant|homebound|grandma|grandpa|family|families)\b/;
+
 function searchResources(resources, rawQuery, language = "en") {
   const analysis = analyzeSearchQuery(rawQuery, language, resources);
   if (!analysis.strongTokens.length && !analysis.phraseConcepts.length) {
@@ -1499,18 +1568,33 @@ function searchResources(resources, rawQuery, language = "en") {
   const urgentKinds = analysis.urgentEmergencies || [];
   const evidenceFor = item => urgentKinds.findIndex(kind => emergencyEvidence(item.resource, kind));
   const anyContent = scored.some(item => item.hasContent);
+  /* Required concepts ("somewhere to sleep tonight"): their category keeps
+     only listings that offer the concept; their fallback help line stays. */
+  const requiredConcepts = analysis.phraseConcepts.filter(concept => concept.required);
+  const requiredCategories = new Set(requiredConcepts.flatMap(concept => Object.keys(concept.categories)));
+  /* Whether listings in the requested categories match the request itself. */
+  const requestedContent = scored.some(item => item.hasContent && analysis.categoryScores[item.resource.category]);
 
   const filtered = scored.filter(item => {
     /* An exact organization name, or a documented affiliation, is always shown. */
     if (item.organization) return true;
+    const category = item.resource.category;
+    if (requiredConcepts.length) {
+      if (item.requiredHit || item.fallbackHit) return true;
+      if (requiredCategories.has(category)) return false;
+    }
     /* Listings that match only through generic words ("lost", "classes",
        "take") are never results: a query made only of generic words gets
        the "tell us what you need" prompt instead. */
     if (item.weakOnly) return false;
+    /* A listing outside the requested service that only mentions it in
+       passing ("meals provided" to residents of a sober living home) does
+       not offer it, when listings for the service itself exist. */
+    if (requestedContent && !analysis.categoryScores[category] && !item.specific && !item.narrowConceptHit && evidenceFor(item) < 0 &&
+        !((analysis.qualifierTokens || []).length && item.beneficiaryFit)) return false;
     /* A listing in the requested category that matches only by category is
        kept when the person is browsing that category broadly, but not when
        they named a sub-service that other listings there describe. */
-    const category = item.resource.category;
     if (!item.hasContent && item.categoryIntent && contentCategories.has(category) && !analysis.broadCategories.has(category)) return false;
     /* The same narrow service in another category (gas cards offered by an
        employment program) and emergency-specific listings stay in. */
@@ -1554,11 +1638,20 @@ function searchResources(resources, rawQuery, language = "en") {
   }
   const costRank = {free:0, unknown:1, paid:2};
   const fitting = (analysis.qualifierTokens || []).length > 0;
+  /* For basic needs (somewhere to sleep tonight, food), listings open to
+     anyone come before those limited to a group, unless the person named a
+     group ("for my kids", "women's shelter"). Eligibility is still shown on
+     every card; nothing is removed for it. */
+  const openFirst = !fitting && !SEARCH_GROUP_WORDS.test(analysis.normalized) &&
+    (requiredConcepts.some(concept => concept.openFirst) || needs.includes("food"));
   accepted.push(...pool.map((item, index) => ({item, index,
     fit: fitting && item.beneficiaryFit ? 0 : 1,
+    fallback: item.fallbackHit && !item.requiredHit ? 1 : 0,
+    /* Not when the request names that very program ("free and reduced lunch"). */
+    open: openFirst && !item.narrowConceptHit && restrictedAudience(item.resource) ? 1 : 0,
     tier: analysis.wantsFree ? (item.specific ? 0 : 1) : 0,
     cost: analysis.wantsFree ? costRank[documentedCost(item.resource, analysis)] : 0
-  })).sort((a, b) => a.fit - b.fit || a.tier - b.tier || a.cost - b.cost || a.index - b.index).map(entry => entry.item));
+  })).sort((a, b) => a.fit - b.fit || a.fallback - b.fallback || a.open - b.open || a.tier - b.tier || a.cost - b.cost || a.index - b.index).map(entry => entry.item));
 
   return {
     status:"ok",
