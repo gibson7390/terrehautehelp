@@ -486,8 +486,12 @@ const SEARCH_LEXICONS = {
       /* Rent help: the phrase is the request, so "assistance" is not searched
          on its own (it names medication, burial and utility programs too).
          A listing offers it when it documents rent, rental help or the
-         Housing Choice Voucher; township trustees qualify by their own text. */
-      {phrases:["rent assistance","rental assistance","help with rent","pay rent","paying rent"],
+         Housing Choice Voucher; township trustees qualify by their own text.
+         "Emergency" in "emergency rental assistance" says how urgent the rent
+         request is; it is not a second, separate request for emergency funds
+         or an emergency shelter. */
+      {phrases:["rent assistance","rental assistance","help with rent","pay rent","paying rent",
+                "emergency rent assistance","emergency rental assistance","emergency rent help","emergency help with rent"],
        serviceTerms:["rent","rental","housing choice voucher"], categories:{housing:4.0,financial:3.8}, narrow:true,
        situational:true, browse:false},
       /* Medication-assisted treatment is an addiction service: a request about
@@ -498,6 +502,12 @@ const SEARCH_LEXICONS = {
       {phrases:["pill addiction","painkiller addiction","prescription drug abuse","prescription drug misuse"],
        patterns:[/\b(?:misus\w*|abus(?:e|es|ing|ed)|addicted to|addiction to|hooked on|dependent on)(?: of| on| to)? (?:my |her |his |their |the )?(?:pain pills|pills|painkillers|pain killers|prescription pills|prescription drugs|pain medication|pain meds)\b/],
        categories:{recovery:4.0}, expand:["addiction","substance"]},
+      /* "Substance abuse" is substance use, not abuse by a person: its
+         "abuse" is not matched on its own, so it does not reach domestic
+         violence or child-abuse services. "Abuse" alone, "domestic abuse",
+         "child abuse" and "sexual abuse" keep their meaning. */
+      {phrases:["substance abuse","drug abuse","alcohol abuse"],
+       categories:{recovery:4.0}, narrow:false, situational:true, expand:["addiction","substance"]},
       {phrases:["utility assistance","utility bill","utility bills","light bill","power bill","electric bill","gas bill",
                 "water bill","heating bill","shutoff","shutoffs","shut off"], categories:{financial:4.0,housing:2.0}, narrow:true},
       {phrases:["school physical","sports physical","work physical"], categories:{health:4.5}, narrow:true},
@@ -1088,10 +1098,30 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const phraseConcepts = [...phraseMap.values()];
 
   /* Words of a situational phrase describe a circumstance; the concept
-     carries their meaning, so they are not matched against listings. */
-  const situationalWords = new Set();
+     carries their meaning, so they are not matched against listings. Only
+     the positions the phrase occupies are left out: in "substance abuse and
+     domestic abuse" the second "abuse" belongs to a separate request and is
+     still searched. (rawTokens and correctedTokens share positions.) */
+  const situationalPositions = new Set();
   phraseConcepts.filter(concept => concept.situational).forEach(concept => {
-    [...conceptWordsIn(normalized, concept), ...conceptWordsIn(correctedText, concept)].forEach(word => situationalWords.add(word));
+    [rawTokens, correctedTokens].forEach(tokens => {
+      const mark = (start, length) => { for (let k = 0; k < length; k++) situationalPositions.add(start + k); };
+      concept.phrases.forEach(phrase => {
+        const words = normalizeSearchText(phrase).split(" ");
+        for (let i = 0; i + words.length <= tokens.length; i++) {
+          if (words.every((word, k) => tokens[i + k] === word)) mark(i, words.length);
+        }
+      });
+      const text = tokens.join(" ");
+      (concept.patterns || []).forEach(pattern => {
+        const all = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+        let match;
+        while ((match = all.exec(text))) {
+          if (!match[0]) { all.lastIndex++; continue; }
+          mark(text.slice(0, match.index).split(" ").length - 1, match[0].split(" ").length);
+        }
+      });
+    });
   });
   const expandTokens = phraseConcepts.flatMap(concept => concept.expand || []);
 
@@ -1117,7 +1147,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const crisisTokenPositions = toTokenPositions(crisisPositions);
   const baseTokens = [
     ...correctedTokens.filter((token, i) => !compoundParts.has(i) && !negatedCost.has(i) && !requestVerbUses.has(i) && !routineSubstance.has(i) &&
-      (!(crisisTokenPositions.has(i) || benignPositions.has(i) || medicationStatement.has(i)) || isServiceTerm(token)) && !situationalWords.has(token)),
+      (!(crisisTokenPositions.has(i) || benignPositions.has(i) || medicationStatement.has(i)) || isServiceTerm(token)) && !situationalPositions.has(i)),
     ...compoundTokens, ...signalTokens, ...expandTokens
   ];
   const synonymTokens = baseTokens.flatMap(token => lexicon.synonyms[token] || []);
@@ -1154,14 +1184,47 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
   const subjectPattern = /\b(?:my|our) (?:adult |grown |\d{1,2} ?(?:years? ?old|yrs? ?old|yo) )?(kids|kid|children|child|son|daughter|baby|teen|teenager)\b/g;
   while ((beneficiaryMatch = subjectPattern.exec(normalized))) beneficiaryWords.add(beneficiaryMatch[1]);
   /* An age stated for that person ("my 14 year old", "my son is 17", "a
-     minor"). It is used only so a program documented as adults-only does not
-     lead a request for someone under 18. "Teenager", "son" or "child" alone
-     state no age, and nothing is inferred about other programs' ages. */
-  const statedAges = [];
-  normalized.replace(/\b(\d{1,2}) ?(?:years? ?old|yrs? ?old|yo)\b/g, (m, age) => statedAges.push(Number(age)));
-  normalized.replace(/\b(?:my|our|a|the) (?:son|daughter|child|kid|boy|girl|teen|teenager|grandson|granddaughter|stepson|stepdaughter|nephew|niece|brother|sister)(?: is| s)?(?: only| just)? (\d{1,2})\b(?! (?:days?|weeks?|months?|years?|times|hours?|minutes?|dollars|percent|pills|mg)\b)/g,
+     minor", "i am 30"). It is used only so a program documented as
+     adults-only does not lead a request for someone under 18; nothing is
+     inferred about other programs' ages. A relative or friend who is helping
+     ("my 14 year old daughter is helping me find treatment") is not the
+     person who needs help, so their words are left out first. The
+     requester's own age ("i am 40") and "adult" said of the requester are
+     that person's only when nobody else is named as needing the help: in
+     "i am 40 and my teen needs treatment" the teen is the person. A relative
+     who is only mentioned, or who will help ("i am 16 and my mom will help
+     me", "my mom can drive me"), is not named as needing it: that takes a
+     need said of them ("my mom needs", "my son is using") or help asked for
+     them ("for my son", "help my son find"). */
+  const forPerson = normalized.replace(/\b(?:my|our) (?:[a-z0-9]+ ){0,4}?(?:is|are|s|has been|have been) helping (?:me|us)\b/g, " ");
+  const selfAges = [];
+  const aboutOthers = forPerson.replace(/\b(?:i am|im)(?: only| just)? (\d{1,2})(?: ?(?:years? ?old|yrs? ?old|yo))?\b(?! (?:days?|weeks?|months?|times|hours?|minutes?|dollars|percent|pills|mg)\b)/g,
+    (m, age) => { selfAges.push(Number(age)); return " "; });
+  const RELATIVE = "(?:son|sons|daughter|daughters|child|children|kid|kids|teen|teens|teenager|teenagers|adolescent|baby|grandson|granddaughter|grandchild|stepson|stepdaughter|nephew|niece|brother|sister|husband|wife|partner|boyfriend|girlfriend|friend|mom|mother|dad|father)";
+  const forSomeoneElse = new RegExp(String.raw`\b(?:my|our) (?:[a-z0-9]+ ){0,3}?${RELATIVE}(?: (?:is|s|are|was|has been))? (?:need|needs|needed|wants|keeps|started|uses|using|drinks|drinking|smokes|vapes|struggles|struggling|requires|addicted|hooked|overdosed|relapsed|homeless)\b(?!(?: to)? (?:help|drive|take|bring|come|go)\b)` +
+    String.raw`|\b(?:for|help|helps|helping) (?:my|our) (?:[a-z0-9]+ ){0,3}?${RELATIVE}\b`).test(aboutOthers);
+  const statedAges = forSomeoneElse ? [] : [...selfAges];
+  aboutOthers.replace(/\b(\d{1,2}) ?(?:years? ?old|yrs? ?old|yo)\b/g, (m, age) => statedAges.push(Number(age)));
+  aboutOthers.replace(/\b(?:my|our|a|the) (?:son|daughter|child|kid|boy|girl|teen|teenager|grandson|granddaughter|stepson|stepdaughter|nephew|niece|brother|sister)(?: is| s)?(?: only| just)? (\d{1,2})\b(?! (?:days?|weeks?|months?|years?|times|hours?|minutes?|dollars|percent|pills|mg)\b)/g,
     (m, age) => statedAges.push(Number(age)));
-  const explicitMinor = statedAges.some(age => age > 0 && age < 18) || /\bunder ?18\b|\b(?:is|s) (?:a )?minor\b|\bunderage\b/.test(normalized);
+  const adultPerson = forSomeoneElse
+    ? /\b(?:my|our) (?:[a-z]+ )?adult\b|\b(?:is|are|s) (?:an? )?(?:adult|grown)\b|\badult (?:son|sons|daughter|daughters|child|children|kid|kids)\b/.test(aboutOthers)
+    : /\badult\b/.test(forPerson);
+  const explicitMinor = statedAges.some(age => age > 0 && age < 18) ||
+    /\bunder ?18\b|\b(?:is|s|am|im) (?:a )?minor\b|\bunderage\b|\b(?:my|our) minor\b|\bminor (?:son|daughter|child|children|kid|kids)\b/.test(forPerson);
+  /* Youth wording for the person who needs the help ("my teen needs", "my
+     adolescent daughter is", "counseling for my child", "teen rehab", "i am
+     a teenager") without an age. A teenager may be 18 or 19, so this is not
+     taken as proof of being under 18; it only keeps a program documented as
+     adults-only from leading, the same conservative order an explicit minor
+     gets. An adult age or "adult" overrides it. An unqualified "son" or
+     "daughter" says nothing about age, and children named only as others the
+     requester supports ("a job to support my kids") are not the person. */
+  const YOUTH = "(?:teen|teens|teenage|teenager|teenagers|adolescent|adolescents|child|children|kid|kids|youngster|youth)";
+  const youthWording = new RegExp(String.raw`\b(?:my|our) (?:[a-z]+ )?${YOUTH}(?: (?:son|daughter|sons|daughters|boy|girl))? (?:need|needs|is|s|are|has|have|was|wants|keeps|started|uses|using|drinks|drinking|smokes|vapes|struggles|struggling)\b` +
+    String.raw`|\b(?:for|help|helping) (?:(?:my|our) (?:[a-z]+ )?|a |an )?${YOUTH}\b(?! (?:support|custody|care|tax|credit|visitation)\b)|\b${YOUTH} (?:rehab|treatment|counseling|counselor|therapy|addiction|substance|drug|alcohol|recovery|detox)\b` +
+    String.raw`|\b(?:i am|im) (?:a |an )?(?:teen|teenager|adolescent|kid|child)\b`).test(forPerson);
+  const possibleMinor = !explicitMinor && youthWording && !statedAges.some(age => age >= 18) && !adultPerson;
   const person = statedPerson(normalized, statedAges, explicitMinor);
   const otherNeed = allIntentTokens.some(token => !beneficiaryWords.has(token) &&
     Object.values(lexicon.categoryTerms).some(termMap => categoryTermStrength(termMap, token) >= SEARCH_NEED_STRENGTH)) ||
@@ -1296,6 +1359,7 @@ function analyzeSearchQuery(rawQuery, language = "en", resources = null) {
        actually asks about. */
     activeSubstanceText: [rawTokens, correctedTokens].map(list => list.filter((_, i) => !routineSubstance.has(i)).join(" ")).join(" "),
     explicitMinor,
+    possibleMinor,
     person,
     tokens: meaningfulTokens,
     tokenInfo,
@@ -1380,7 +1444,10 @@ function resourceContainsConcept(fields, concept) {
 const URGENT_CONTENT_TERMS = {
   "overdose": [
     ["911", 36], ["naloxone", 36], ["narcan", 36], ["overdose", 32],
-    ["opioid", 24], ["emergency", 12], ["substance", 10], ["addiction", 10],
+    /* "emergency" is not an overdose term: on its own it matched emergency
+       funds, food and lodging listings ("Emergency Assistance"), which then
+       appeared under the overdose guidance card. */
+    ["opioid", 24], ["substance", 10], ["addiction", 10],
     ["recovery", 8], ["detox", 8]
   ],
   "mental-crisis": [
@@ -1722,8 +1789,9 @@ function opioidOnlyScope(resource) {
    "primary care for uninsured adults"). "Adult" naming a kind of program
    ("adult education", "Adult High School Diploma") is not a restriction.
    For a request about someone stated to be under 18 such a listing comes
-   after the others, with its requirement still shown on the card. */
-const ADULTS_ONLY = /\bmust be (?:18|19|21)\b|\b(?:18|19|21) ?(?:\+|or older|and older|or over|and over)|\badults? only\b|\bminimum age (?:of )?(?:18|19|21)\b|\bfor (?:[a-z-]+ ){0,3}(?:adults\b|adult (?:males?|females?|men|women)\b)/;
+   after the others, with its requirement still shown on the card. A document
+   asked of the adults in a household ("photo ID for adults") is not one. */
+const ADULTS_ONLY = /\bmust be (?:18|19|21)\b|\b(?:18|19|21) ?(?:\+|or older|and older|or over|and over)|\badults? only\b|\bminimum age (?:of )?(?:18|19|21)\b|(?<!\b(?:id|identification) )\bfor (?:[a-z-]+ ){0,3}(?:adults\b|adult (?:males?|females?|men|women)\b)/;
 function adultsOnly(resource) {
   return ADULTS_ONLY.test(`${resource.requirements || ""} ${resource.description || ""}`.toLowerCase());
 }
@@ -1847,16 +1915,33 @@ function searchResources(resources, rawQuery, language = "en") {
   };
   const accepted = [];
   urgentKinds.forEach((kind, k) => accepted.push(...take(item => evidenceFor(item) === k)));
-  accepted.push(...take(item => item.organization > 0).sort((a, b) => b.organization - a.organization || filtered.indexOf(a) - filtered.indexOf(b)));
   /* A program whose documented eligibility excludes the stated person
-     (adults only for someone under 18; "Women and children only" for an
-     adult man) is never picked to represent a need; it is ordered last below. */
-  const ineligible = item => (analysis.explicitMinor && adultsOnly(item.resource)) || audienceConflict(item.resource, analysis.person);
+     (adults only for someone stated to be under 18, or described as a teen
+     or child with no adult age; "Women and children only" for an adult man)
+     is never picked to represent a need; it is ordered last below. */
+  const ineligible = item => ((analysis.explicitMinor || analysis.possibleMinor) && adultsOnly(item.resource)) ||
+    audienceConflict(item.resource, analysis.person);
+  /* Help with substance use, when housing was not asked for: treatment and
+     recovery-navigation services before residential programs (sober living,
+     recovery and transitional housing). Nothing is removed. */
+  const residentialLast = needs.includes("recovery") && !RECOVERY_HOUSING_REQUEST.test(analysis.normalized);
+  const residentialProgram = item => RECOVERY_HOUSING_TAGS.test(normalizeSearchText((item.resource.tags || []).join(" ")));
+  /* An organization named in the request always leads. A phrase found only
+     in a description ("substance use" in "housing for adults with ...
+     substance use disorders") is an affiliation: it does not lift a listing
+     that the two rules above place last, which stays in the ordinary order. */
+  accepted.push(...take(item => item.organization >= 100 ||
+      (item.organization > 0 && !ineligible(item) && !(residentialLast && residentialProgram(item))))
+    .sort((a, b) => b.organization - a.organization || filtered.indexOf(a) - filtered.indexOf(b)));
+  /* With two or more needs, the listing picked to represent each need
+     follows the same two rules: not a program whose eligibility excludes the
+     person, and not a residential program for a treatment request. */
+  const representative = item => !ineligible(item) && !(residentialLast && residentialProgram(item));
   if (needs.length >= 2) {
-    accepted.push(...take(item => !ineligible(item) && needs.every(need => item.coveredNeeds.has(need))));
+    accepted.push(...take(item => representative(item) && needs.every(need => item.coveredNeeds.has(need))));
     const bests = needs
       .filter(need => !accepted.some(item => item.coveredNeeds.has(need)))
-      .map(need => pool.find(item => !ineligible(item) && item.coveredNeeds.has(need)))
+      .map(need => pool.find(item => representative(item) && item.coveredNeeds.has(need)))
       .filter((item, i, list) => item && list.indexOf(item) === i)
       .sort((a, b) => filtered.indexOf(a) - filtered.indexOf(b));
     accepted.push(...take(item => bests.includes(item)).sort((a, b) => filtered.indexOf(a) - filtered.indexOf(b)));
@@ -1869,10 +1954,6 @@ function searchResources(resources, rawQuery, language = "en") {
      every card; nothing is removed for it. */
   const openFirst = !fitting && !SEARCH_GROUP_WORDS.test(analysis.normalized) &&
     (requiredConcepts.some(concept => concept.openFirst) || needs.includes("food"));
-  /* Help with substance use, when housing was not asked for: treatment and
-     recovery-navigation services before residential programs (sober living,
-     recovery and transitional housing). Nothing is removed. */
-  const residentialLast = needs.includes("recovery") && !RECOVERY_HOUSING_REQUEST.test(analysis.normalized);
   /* Judged on the drugs the request asks about, not ones it says are
      prescribed or not used ("not using heroin but needs meth treatment"). */
   const requestText = analysis.activeSubstanceText;
@@ -1886,7 +1967,7 @@ function searchResources(resources, rawQuery, language = "en") {
     /* Only listings that serve the request (its category, or a specific
        match such as CARES or Hamilton Center) move ahead of residential
        programs; an incidental match ("Vocational Rehab") does not. */
-    residential: residentialLast && (RECOVERY_HOUSING_TAGS.test(normalizeSearchText((item.resource.tags || []).join(" "))) ||
+    residential: residentialLast && (residentialProgram(item) ||
       !(item.specific || needs.includes(item.resource.category))) ? 1 : 0,
     scope: otherSubstanceOnly && opioidOnlyScope(item.resource) ? 1 : 0,
     adultOnly: ineligible(item) ? 1 : 0,

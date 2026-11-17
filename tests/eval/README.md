@@ -86,7 +86,17 @@ Cases with a `known` field fail on purpose until the retrieval problem is fixed.
 | Query | Expected | Dataset evidence | Current behaviour |
 |---|---|---|---|
 | got arrested need lawyer | legal-002 first | Vigo County Public Defender: "Court-appointed representation for criminal cases." | Ranks 13th; the query's words ("arrested", "lawyer") don't reach "criminal" or "public defender". |
-| get my license back | employment-011 first | Fines & Fees Assistance Program: "Help paying court fines to restore driving privileges." | Not returned; "license" instead matches "licensed daycare providers" (children-008). |
+| get my license back | employment-011 first | Fines & Fees Assistance Program: "Help paying court fines to restore driving privileges." | Not returned; "license" instead matches "licensed counselors" (crisis-001). Before the 2026-11 accuracy patch it matched "licensed daycare providers" in the since-withheld children-008. |
+| no way to get to work | transport-001 or transport-005 in the top 3 | Terre Haute Transit — City Bus; Gas Voucher Program — Salvation Army. | Not returned; "get to work" reads as an employment request. Passed before 2026-11 only through two withheld listings (employment-006, transport-004). |
+| need id to get a job | other-003 in the top 2 | Indiana BMV — State Identification Card. | Returned 6th, below job listings. Passed before 2026-11 only through the withheld "BMV Help Desk" listing (employment-008). |
+| no car and need to get to my job (former holdout) | transport-001 in the top 3 | Terre Haute Transit — City Bus. | Returned 8th. Passed before 2026-11 only through two withheld listings (employment-006, transport-004). |
+| medicaid | food-002 or financial-005 in the top 5 | Division of Family Resources: "helps with enrollment in SNAP food assistance, TANF, and health coverage." | Not returned; the listings say "health coverage", not "Medicaid". Expectation written 2026-11-17, replacing a review flag whose reason (no enrollment office listed) stopped being true. |
+
+### 2026-11 accuracy patch
+
+Fifteen listings were withheld from `resources.js` and seventeen corrected (evidence: `tests/audit/resource-accuracy-2026-11-16.md`). Expectations that named a withheld listing were rewritten from the corrected data. Cases whose service no remaining listing documents carry a `gap` flag beginning "withheld 2026-11" (DACA, volunteer driver, foster care, and the withheld organizations' names, including Club Soda). Naloxone and harm-reduction searches reach recovery-016, a statewide naloxone listing added 2026-11-17. The three rows above marked "Passed before 2026-11 only through…" are retrieval problems the withheld listings had been hiding.
+
+Against 91c0e11, 119 case expectations changed, 1 case was added and none deleted (counted per case, including cases that use a shared constant such as `od`, and multi-line cases). The audit document lists the classification.
 
 ### Recorded for the final relevance repair (confirmed 2026-10-25; resolved in the relevance repair)
 

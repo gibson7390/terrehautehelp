@@ -11,6 +11,15 @@
            v: "word"      — word used to generate spelling variants (variants.js).
    Severity defaults are set per group at the bottom of this file. */
 
+/* 2026-11 accuracy patch. Fifteen listings were withheld from resources.js
+   because their provider, program or contact details could not be verified,
+   and fourteen were corrected from official sources (see
+   tests/audit/resource-accuracy-2026-11-16.md). Expectations that named a
+   withheld listing were rewritten from the corrected data: the withheld ID
+   was dropped, or replaced by the listing that now documents the service.
+   Where no remaining listing documents the service the case carries a `gap`
+   flag beginning "withheld 2026-11". No expectation was changed to match
+   search output. */
 const EVAL_CASES = (() => {
   const groups = {};
   const add = (group, defaults) => (kind, query, exp = {}, meta = {}) => {
@@ -70,9 +79,9 @@ const EVAL_CASES = (() => {
   housing("service", "section 8", {first:"housing-003"});
   housing("service", "housing voucher", {first:"housing-003"});
   housing("service", "low income housing", {first:"housing-003"});
-  housing("service", "rental assistance", {first:["housing-004","housing-003"], top:["housing-004"], n:2}, {v:"rental"});
-  housing("service", "rent help", {any:["housing-004","financial-002","financial-013"], an:2});
-  housing("service", "eviction", {has:["housing-004","legal-004","legal-001"], any:["housing-004","legal-004"]}, {v:"eviction"});
+  housing("service", "rental assistance", {first:["housing-003","financial-013"], top:["housing-003","financial-013"], n:3}, {v:"rental"});
+  housing("service", "rent help", {any:["financial-013","housing-003"], an:2});
+  housing("service", "eviction", {has:["legal-001"], any:["legal-001"]}, {v:"eviction"});
   housing("service", "day shelter", {first:"housing-006"});
   housing("service", "showers", {first:"housing-006"});
   housing("service", "laundry", {first:"housing-006"});
@@ -81,25 +90,25 @@ const EVAL_CASES = (() => {
   housing("service", "womens shelter", {first:"housing-001"});
   housing("service", "shelter for women and children", {first:"housing-001"});
   housing("service", "stranded", {first:"housing-002"});
-  housing("service", "utility shutoff", {top:["housing-004","crisis-003"], n:3});
-  housing("everyday", "i got nowhere to sleep tonight", {any:["housing-002","housing-001"], not:["crisis-004"]});
+  housing("service", "utility shutoff", {top:["crisis-003"], n:3});
+  housing("everyday", "i got nowhere to sleep tonight", {any:["housing-002","housing-001"], not:["recovery-016"]});  /* was not:["crisis-004"]: no overdose resource for a shelter request */
   /* Corrected (relevance repair): the old expectation required Housing/Crisis categories in the top 3,
      but Light House Mission's food-006 listing documents "emergency shelter … Shelter intake is 24/7",
      so a category test excluded a real overnight shelter. The intent kept: an overnight shelter first,
      no car-repair listing. Original: any housing-002/housing-001/housing-006, cats {in:[housing,crisis], n:3}. */
   housing("everyday", "sleeping in my car", {first:["housing-002","food-006","housing-001"], notCat:["transportation"]});
   housing("everyday", "need a place to stay", {any:["housing-002","housing-001"]});
-  housing("everyday", "getting evicted", {top:["housing-004","legal-004"], n:5});
-  housing("everyday", "my landlord is kicking me out", {top:["legal-004","housing-004"], n:5});
-  housing("everyday", "behind on rent", {any:["housing-004","financial-002","financial-013"], an:2});
+  housing("everyday", "getting evicted", {top:["legal-001"], n:5});
+  housing("everyday", "my landlord is kicking me out", {top:["legal-001"], n:5});
+  housing("everyday", "behind on rent", {any:["financial-013","housing-003"], an:2});  /* was housing-004 or a trustee in the top 2 */
   housing("everyday", "kicked out of my house", {any:["housing-002","housing-001","housing-006"], notTop:{ids:["recovery-004","recovery-005","recovery-008"], n:3}}, {review:"could mean family conflict or a tenant issue"});
   housing("everyday", "no where to go", {any:["housing-002","housing-001","crisis-005"], an:3}, {sev:"high"});
   housing("everyday", "need housing for someone with disabilities", {first:"housing-007"});
   housing("misspell", "shleter", {top:["housing-001","housing-002"], n:3});
   housing("misspell", "homles", {any:["housing-002","housing-001","housing-006"]});
-  housing("misspell", "evection", {any:["housing-004","legal-004"], an:5}, {review:"distance 1 from 'election'-like words; not a known vocabulary word"});
+  housing("misspell", "evection", {any:["legal-001"], an:5}, {review:"distance 1 from 'election'-like words; not a known vocabulary word"});
   /* Corrected (third review): aligned with the correctly spelled "rental assistance" case, which accepts either listing tagged "rental assistance". */
-  housing("misspell", "rentle assistance", {first:["housing-004","housing-003"]});
+  housing("misspell", "rentle assistance", {first:["housing-003","financial-013"]});
   housing("misspell", "sectoin 8", {first:"housing-003"});
   housing("org", "Bethany House", {first:"housing-001"});
   housing("org", "Light House Mission", {top:["housing-002","food-006"], n:2});
@@ -111,11 +120,11 @@ const EVAL_CASES = (() => {
   /* ── HEALTHCARE ───────────────────────────────────────────────────── */
   const health = add("health");
   health("direct", "doctor", {cats:{in:["health"], n:3}}, {v:"doctor"});
-  health("direct", "free clinic", {top:["health-002","health-009"], n:4}, {v:"clinic"});
+  health("direct", "free clinic", {top:["health-009","health-007"], n:4}, {v:"clinic"});
   health("direct", "dentist", {first:"health-007"}, {v:"dentist"});
   health("direct", "dental", {first:"health-007"});
-  health("direct", "mental health", {top:["health-001","health-004","health-005"], n:6});
-  health("direct", "urgent care", {first:"health-008", not:["children-003","senior-003"]});
+  health("direct", "mental health", {top:["health-001","health-005"], n:6});
+  health("direct", "urgent care", {first:"health-008", not:["senior-003"]});
   health("service", "walk in clinic", {first:"health-008"});
   health("service", "eye exam", {any:["health-007"]}, {review:"only 'vision screenings' are listed"});
   health("service", "glasses", {any:["health-007"], an:5}, {gap:"no eyeglasses provider in the dataset"});
@@ -126,29 +135,29 @@ const EVAL_CASES = (() => {
   health("service", "physicals", {top:["health-003","health-008"], n:3});
   health("service", "veterans health care", {first:"health-006"});
   health("service", "va clinic", {first:"health-006"});
-  health("service", "therapy", {any:["health-001","health-004"], an:3});
+  health("service", "therapy", {any:["health-001"], an:3});
   health("service", "psychiatrist", {any:["health-001","recovery-015"]});
   health("service", "prescription help", {has:["financial-016","senior-004","crisis-003"], any:["financial-016","senior-004","crisis-003"], an:3}, {v:"prescription"});
   health("service", "x-ray", {first:"health-008"});
   health("service", "uti", {first:"health-009"});
-  health("service", "sliding scale", {any:["health-007","health-001","health-004"]});
-  health("service", "medicaid", {any:["health-004","transport-002","recovery-015"], an:5}, {review:"several listings accept Medicaid; none is a Medicaid enrollment office"});
-  health("everyday", "i am sick and have no insurance", {any:["health-002","health-009","health-007"]});
+  health("service", "sliding scale", {any:["health-007","health-001"]});
+  health("service", "medicaid", {any:["food-002","financial-005"], an:5}, {known:"the Division of Family Resources listings (food-002, financial-005) document health-coverage enrollment but do not use the word Medicaid; the search does not connect them"});  /* review flag replaced: its reason (no enrollment office listed) is no longer true */
+  health("everyday", "i am sick and have no insurance", {any:["health-009","health-007"]});
   health("everyday", "my tooth hurts", {any:["health-007"]});
   health("everyday", "toothache", {any:["health-007"]});
   health("everyday", "cant afford my medicine", {any:["financial-016","senior-004","crisis-003"], an:5});
-  health("everyday", "i need someone to talk to", {any:["health-001","health-004","health-005","crisis-001"], an:5}, {review:"could be emotional support or a crisis"});
-  health("everyday", "sick but no money for a doctor", {any:["health-002","health-009"], an:5});
-  health("everyday", "where can i see a doctor today", {first:["health-008","health-002","health-009"]}, {review:"same-day availability is not represented in the data"});
+  health("everyday", "i need someone to talk to", {any:["health-001","health-005","crisis-001"], an:5}, {review:"could be emotional support or a crisis"});
+  health("everyday", "sick but no money for a doctor", {any:["health-009","health-007"], an:5});
+  health("everyday", "where can i see a doctor today", {first:["health-008","health-009"]}, {review:"same-day availability is not represented in the data"});
   health("misspell", "docter", {cats:{in:["health"], n:3}});
   health("misspell", "clinc", {cats:{in:["health"], n:3}});
   health("misspell", "perscription", {any:["financial-016","senior-004","crisis-003"], an:5});
   health("misspell", "insurence", {cats:{in:["health"], n:3}});
   health("misspell", "dentel", {first:"health-007"});
   health("org", "Hamilton Center", {top:["health-001","crisis-001"], n:4});
-  health("org", "Centerstone", {first:"health-004"});
+  health("org", "Centerstone", {none:true}, {gap:"withheld 2026-11: Centerstone lists no Terre Haute location"});
   health("org", "Mental Health America", {top:["health-005","financial-016"], n:2});
-  health("org", "Neighborhood Health Clinic", {first:"health-002"});
+  health("org", "Neighborhood Health Clinic", {cats:{in:["health"], n:3}}, {gap:"withheld 2026-11: no source confirms this clinic; other clinics are the nearest help"});
   health("org", "Wabash Valley Health Center", {first:"health-007"});
   health("org", "Ambucare", {first:"health-008"});
   health("org", "Mollie Wheat", {first:"health-009"});
@@ -161,23 +170,24 @@ const EVAL_CASES = (() => {
   crisis("direct", "emergency help", {cats:{in:["crisis","financial"], n:3}}, {review:"'emergency' spans crisis and emergency-cash listings"});
   crisis("service", "211", {first:"crisis-005"});
   crisis("service", "2-1-1", {first:"crisis-005"});
-  crisis("service", "naloxone", {first:"crisis-004"});
-  crisis("service", "narcan", {first:"crisis-004"});
-  crisis("service", "harm reduction", {first:"crisis-004"});
+  /* Terre Haute CARES (crisis-004) was withheld 2026-11; recovery-016 is the statewide naloxone map and kit-request listing read from Overdose Lifeline and the Indiana Department of Health. */
+  crisis("service", "naloxone", {g:null, first:"recovery-016"});
+  crisis("service", "narcan", {g:null, first:"recovery-016"});
+  crisis("service", "harm reduction", {g:null, first:"recovery-016"});  /* Overdose Lifeline calls its naloxone kits and test strips harm reduction supplies (independent review 2026-11-17) */
   crisis("service", "domestic violence", {first:"crisis-002", top:["housing-001"], n:4, has:["legal-006","children-006"]}, {v:"violence"});
   crisis("service", "sexual assault", {first:"crisis-002"});
   crisis("service", "safety plan", {any:["crisis-002","legal-006"], an:2});
-  crisis("service", "emergency money", {any:["crisis-003","financial-003","financial-002"]});
-  crisis("service", "utility shutoff notice", {any:["crisis-003","housing-004","financial-001"]});
+  crisis("service", "emergency money", {any:["crisis-003","financial-003"]});
+  crisis("service", "utility shutoff notice", {any:["crisis-003","financial-001"]});
   crisis("everyday", "who do i call when i dont know where to start", {any:["crisis-005"], an:3}, {review:"conversational; 211 is the documented first call"});
   crisis("org", "CODA", {top:["crisis-002","legal-006","children-006"], n:3});
-  crisis("org", "Terre Haute CARES", {first:"crisis-004"});
+  crisis("org", "Terre Haute CARES", {not:["crisis-003","crisis-005"]}, {gap:"withheld 2026-11: no source confirms this program"});
   crisis("org", "Anabranch", {first:"crisis-008"});
 
   /* ── CRISIS EXPRESSIONS (guidance) ────────────────────────────────── */
   const ce = add("crisis-expr");
   const mental = {g:"mental-crisis", first:"crisis-001", notCat:["pet"]};
-  const od = {g:"overdose", first:"crisis-004", notCat:["pet"]};
+  const od = {g:"overdose", notCat:["pet"], not:["crisis-003","crisis-005"]};
   const dv = {first:"crisis-002", top:["housing-001"], n:5, notCat:["pet"], not:["senior-003"]};
   ["i want to die","i wanna die","i want to end my life","i want to kill myself","im going to kill myself",
    "thinking about suicide","suicidal","i feel suicidal","suicidal thoughts","i dont want to live anymore",
@@ -200,8 +210,8 @@ const EVAL_CASES = (() => {
   /* Review findings (Codex): mixed urgent needs keep both guidance cards and every explicit need */
   /* Second review: emergency-specific resources must precede routine help, without promoting every Crisis listing. */
   ce("crisis", "someone overdosed and i want to die and i need food pantry",
-    {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"], any:["food-008","food-009","food-010","food-011","food-012"], an:12,
-     ahead:[["crisis-004","food"],["crisis-001","food"]], notAhead:[["crisis-003","food"],["crisis-005","food"],["crisis-008","food"]]}, {src:"codex"});
+    {urgentAll:["overdose","mental-crisis"], has:["crisis-001"], any:["food-008","food-009","food-010","food-011","food-012"], an:12,
+     ahead:[["crisis-001","food"]], notAhead:[["crisis-003","food"],["crisis-005","food"],["crisis-008","food"]]}, {src:"codex"});
   ce("crisis", "i want to die and need food pantry",
     {urgentAll:["mental-crisis"], ahead:[["crisis-001","food"]], notAhead:[["crisis-003","food"]], needs:[["food-008","food-009","food-010","food-011","food-012","food-003","food-001"]]}, {src:"codex2"});
   /* Second review: genuine phrases with ordinary continuations, and past tense */
@@ -211,7 +221,7 @@ const EVAL_CASES = (() => {
   ce("crisis", "cutting myself a piece of cake but i want to die", mental, {src:"codex2"});
   ce("crisis", "i want to end it with my boyfriend because i want to die", mental, {src:"codex2"});
   ce("crisis", "i want to end it all", mental, {src:"codex2"});
-  ce("crisis", "i want to die and someone overdosed", {urgentAll:["overdose","mental-crisis"], has:["crisis-004","crisis-001"]}, {src:"codex"});
+  ce("crisis", "i want to die and someone overdosed", {urgentAll:["overdose","mental-crisis"], has:["crisis-001"]}, {src:"codex"});
   ce("crisis", "i want to die and my friend is odd", {urgentAll:["mental-crisis"], first:"crisis-001", notCat:["pet"]}, {src:"codex"});
   ce("crisis", "my friend is odd and i want to die", {urgentAll:["mental-crisis"], first:"crisis-001", notCat:["pet"]}, {src:"codex"});
   ce("crisis", "he od'd on fentanyl", od, {src:"codex"});
@@ -233,8 +243,8 @@ const EVAL_CASES = (() => {
   look("lookalike", "dead battery", noCrisis);
   look("lookalike", "deadline for taxes", {...noCrisis, any:["financial-007","senior-006"]});
   look("lookalike", "my phone died", noCrisis);
-  look("lookalike", "funeral for my dad who died", {...noCrisis, first:["financial-008","financial-002"]});
-  look("lookalike", "my mom died need burial help", {...noCrisis, first:["financial-008","financial-002"]});
+  look("lookalike", "funeral for my dad who died", {...noCrisis, first:["financial-008","financial-013"]});
+  look("lookalike", "my mom died need burial help", {...noCrisis, first:["financial-008","financial-013"]});
   look("lookalike", "hurt my back at work", noCrisis);
   look("lookalike", "self employed", noCrisis);
   look("lookalike", "self help", noCrisis);
@@ -245,7 +255,7 @@ const EVAL_CASES = (() => {
   /* Review flag removed: the review confirmed "hit me up" is slang for contacting someone. */
   look("lookalike", "he hit me up about a job", {g:null, not:["crisis-002"], cats:{in:["employment"], n:2}});
   look("lookalike", "she hit me up", {g:null, not:["crisis-002"]}, {src:"codex"});
-  look("lookalike", "my friend is odd", {g:null, not:["crisis-004"]}, {src:"codex"});
+  look("lookalike", "my friend is odd", {g:null, not:["recovery-016"]}, {src:"codex"});  /* was not:["crisis-004"] */
   look("lookalike", "cutting myself a piece of cake", {g:null, not:["crisis-001"]}, {src:"codex"});
   look("lookalike", "this homework is killing me", {g:null, not:["crisis-001"], any:["education-008"]}, {src:"codex"});
   look("lookalike", "i want to end it with my boyfriend and start dating other people", {g:null, not:["crisis-001"]}, {src:"codex2"});
@@ -269,25 +279,25 @@ const EVAL_CASES = (() => {
   rec("direct", "sober living", {cats:{in:["recovery"], n:5}, notCat:["pet"]}, {v:"sober"});
   rec("direct", "rehab", {any:["recovery-015","recovery-014","crisis-008"], an:5, notTop:{ids:["education-010"], n:5}}, {v:"rehab"});
   rec("direct", "detox", {first:"recovery-015"}, {v:"detox"});
-  rec("service", "sober living for women", {any:["recovery-007","recovery-008","recovery-009"], notTop:{ids:["recovery-002","recovery-003","recovery-004","recovery-005","recovery-006"], n:3}});
-  rec("service", "sober living for men", {any:["recovery-002","recovery-003","recovery-004","recovery-005","recovery-006"], notTop:{ids:["recovery-007","recovery-008","recovery-009"], n:3}});
+  rec("service", "sober living for women", {any:["recovery-007","recovery-008"], notTop:{ids:["recovery-002","recovery-003","recovery-004","recovery-005","recovery-006"], n:3}});
+  rec("service", "sober living for men", {any:["recovery-002","recovery-003","recovery-004","recovery-005","recovery-006"], notTop:{ids:["recovery-007","recovery-008"], n:3}});
   rec("service", "sober living that allows children", {any:["recovery-007","recovery-011"]});
-  rec("service", "co-ed sober living", {top:["recovery-010","recovery-011"], n:3});
+  rec("service", "co-ed sober living", {top:["recovery-011"], n:3});  /* recovery-010 (Club Soda) withheld 2026-11 */
   rec("service", "oxford house", {top:["recovery-004","recovery-005","recovery-008"], n:3});
-  rec("service", "halfway house", {first:"recovery-009"});
+  rec("service", "halfway house", {cats:{in:["recovery"], n:3}}, {gap:"withheld 2026-11: the only listing called a halfway house (Kathy's Hope) is certified in Valparaiso, not Terre Haute"});
   /* recovery-012 is documented free; recovery-002 charges $100/week and the Oxford Houses require an equal share of expenses. */
-  rec("service", "free sober living", {first:"recovery-012", before:[["recovery-012","recovery-002"],["recovery-010","recovery-002"],["recovery-010","recovery-004"]]});
+  rec("service", "free sober living", {first:"recovery-012", before:[["recovery-012","recovery-002"],["recovery-007","recovery-002"],["recovery-003","recovery-004"]]});  /* recovery-010 (no cost documented) withheld 2026-11; recovery-007 and recovery-003 document no cost either */
   rec("service", "dual diagnosis", {top:["recovery-013","recovery-015"], n:3});
   rec("service", "medication assisted treatment", {first:"recovery-014"});
   rec("service", "MAT", {first:"recovery-014"});
-  rec("service", "opioid addiction", {any:["recovery-014","crisis-004"]});
+  rec("service", "opioid addiction", {any:["recovery-014"]});
   rec("service", "methadone", {any:["recovery-014"]}, {review:"WIN offers MAT but the data does not name methadone"});
   rec("service", "suboxone", {any:["recovery-014"]}, {review:"WIN offers MAT but the data does not name suboxone"});
   rec("service", "inpatient rehab", {first:"recovery-015"});
   rec("service", "12 step", {cats:{in:["recovery"], n:3}});
-  rec("everyday", "i cant stop drinking", {any:["recovery-001","recovery-015","health-001","health-004"], an:5});
+  rec("everyday", "i cant stop drinking", {any:["recovery-001","recovery-015","health-001"], an:5});
   rec("everyday", "i need to get clean", {cats:{in:["recovery","health","crisis"], n:3}});
-  rec("everyday", "addicted to pills", {any:["recovery-014","recovery-015","crisis-004","health-001","health-004"], an:5});
+  rec("everyday", "addicted to pills", {any:["recovery-014","recovery-015","health-001"], an:5});
   rec("everyday", "my son is on drugs", {cats:{in:["recovery","health","crisis"], n:3}}, {review:"family member seeking help"});
   rec("everyday", "want to quit meth", {cats:{in:["recovery","health","crisis"], n:3}});
   rec("everyday", "need a sober house today", {cats:{in:["recovery"], n:3}});
@@ -300,8 +310,8 @@ const EVAL_CASES = (() => {
   rec("org", "Roadways to Recovery", {first:"recovery-003"});
   rec("org", "Truman House", {first:"recovery-006"});
   rec("org", "Phoenix House", {first:"recovery-007"});
-  rec("org", "Kathys Hope", {first:"recovery-009"});
-  rec("org", "Club Soda", {first:"recovery-010"});
+  rec("org", "Kathys Hope", {none:true}, {gap:"withheld 2026-11: the only state-certified Kathy's Hope is in Valparaiso"});
+  rec("org", "Club Soda", {none:true}, {gap:"withheld 2026-11: residents vacated under a city order in September 2026 (WTHI); no reopening is documented"});
   rec("org", "Next Step", {first:"recovery-011"});
   rec("org", "Light Life", {first:"recovery-012"});
   rec("org", "Oak Street House", {first:"recovery-013"});
@@ -318,13 +328,13 @@ const EVAL_CASES = (() => {
   legal("service", "expungement", {first:"legal-003"}, {v:"expungement"});
   legal("service", "seal my record", {first:"legal-003"});
   legal("service", "clear my criminal record", {first:"legal-003"});
-  legal("service", "tenant rights", {first:"legal-004"});
+  legal("service", "tenant rights", {top:["legal-001","legal-012"], n:3});
   legal("service", "small claims", {first:"legal-005"});
   legal("service", "protection order", {first:"legal-006"});
   /* Review flag removed: legal-006 is the only protection-order resource, so the expectation is unambiguous. */
   legal("service", "protective order", {first:"legal-006"});
   legal("service", "custody", {first:"legal-001"});
-  legal("service", "divorce", {any:["legal-001","legal-007"]}, {gap:"no family-law resource names divorce"});
+  legal("service", "divorce", {first:"legal-001"});  /* gap flag removed: Indiana Legal Services (legal-001) now names divorce under family law */
   legal("service", "bankruptcy", {first:"legal-010"});
   legal("service", "debt collectors", {any:["legal-010","financial-011"], an:2});
   legal("service", "court date", {first:"legal-008"});
@@ -332,7 +342,7 @@ const EVAL_CASES = (() => {
   legal("service", "know your rights", {top:["legal-012","immigration-002"], n:2});
   legal("service", "attorney referral", {first:"legal-009"});
   legal("service", "pro bono", {first:"legal-007"});
-  legal("everyday", "my landlord wont fix anything", {any:["legal-004","legal-001"]});
+  legal("everyday", "my landlord wont fix anything", {any:["legal-001"]});
   legal("everyday", "i have a warrant", {any:["legal-002","legal-008"], an:5}, {gap:"no warrant-specific resource"});
   legal("everyday", "need help with court", {any:["legal-005","legal-008","legal-002","legal-001"]});
   /* Known retrieval/ranking issue (fifth review), not a missing service: legal-002 Vigo County Public Defender
@@ -351,7 +361,7 @@ const EVAL_CASES = (() => {
   /* ── FINANCIAL HELP ───────────────────────────────────────────────── */
   const fin = add("financial");
   fin("direct", "financial help", {cats:{in:["financial"], n:3}}, {v:"financial"});
-  fin("direct", "emergency cash", {any:["financial-002","financial-003","crisis-003","financial-013"]});
+  fin("direct", "emergency cash", {any:["financial-003","crisis-003"]});  /* financial-013 dropped: Harrison Township issues vouchers, never cash */
   fin("service", "LIHEAP", {first:"financial-001"});
   fin("service", "heating bill", {first:"financial-001"});
   fin("service", "energy assistance", {first:"financial-001"});
@@ -364,29 +374,32 @@ const EVAL_CASES = (() => {
   fin("service", "SSDI", {first:"financial-006"});
   fin("service", "free tax help", {top:["financial-007"], n:2});
   fin("service", "taxes", {any:["financial-007","senior-006"]});
-  fin("service", "burial assistance", {top:["financial-008"], n:2, has:["financial-002"]}, {v:"burial"});
-  fin("service", "funeral costs", {first:["financial-008","financial-002"]});
+  fin("service", "burial assistance", {top:["financial-008"], n:2, has:["financial-013"]}, {v:"burial"});
+  fin("service", "funeral costs", {first:["financial-008","financial-013"]});
   fin("service", "united way", {top:["financial-009"], n:2});
   fin("service", "clothing", {first:["financial-010","housing-006"]}, {v:"clothing"});
   fin("service", "furniture", {first:"financial-010"});
   fin("service", "budget help", {first:"financial-011"});
-  fin("service", "credit repair", {first:"financial-011"});
-  fin("service", "veterans emergency assistance", {first:"financial-012"});
-  fin("service", "township trustee", {has:["financial-002","financial-013","financial-014","financial-015"]});
+  fin("service", "credit repair", {any:["financial-011"], an:3}, {gap:"corrected 2026-11: the agency documents budgeting and money management, not credit repair"});
+  /* Corrected 2026-11: the listing is the county Veterans Service Office (benefits help); its old name
+     "Veterans Emergency Assistance" and its emergency-funds claim were not supported. */
+  fin("service", "veterans emergency assistance", {any:["financial-012"], an:2});
+  fin("org", "Veterans Service Office", {first:"financial-012"});
+  fin("service", "township trustee", {has:["financial-013","financial-014","financial-015"]});
   fin("service", "Harrison Township", {first:"financial-013"});
   fin("service", "Honey Creek", {first:"financial-014"});
   fin("service", "Lost Creek", {first:"financial-015"});
   fin("service", "psychiatric medication help", {first:"financial-016"});
-  fin("everyday", "i cant pay my light bill", {any:["housing-004","crisis-003","financial-013","financial-002","financial-001"]}, {sev:"high"});
-  fin("everyday", "my power is getting shut off", {any:["housing-004","crisis-003","financial-001"]}, {sev:"high"});
+  fin("everyday", "i cant pay my light bill", {any:["crisis-003","financial-013","financial-001"]}, {sev:"high"});
+  fin("everyday", "my power is getting shut off", {any:["crisis-003","financial-001"]}, {sev:"high"});
   fin("everyday", "need money for bills", {cats:{in:["financial","housing","crisis"], n:3}});
   fin("everyday", "need clothes", {first:["financial-010","housing-006"]});
   fin("everyday", "need a bed", {any:["financial-010"], an:3}, {review:"bed could mean shelter bed"});
   fin("everyday", "my kid needs diapers", {first:"financial-004"});
-  fin("misspell", "utilites", {any:["housing-004","financial-001","financial-013"]});
+  fin("misspell", "utilites", {any:["financial-001","financial-013"]});
   fin("misspell", "finacial help", {cats:{in:["financial"], n:3}});
   fin("misspell", "dipers", {first:"financial-004"});
-  fin("misspell", "burrial", {first:["financial-008","financial-002"]});
+  fin("misspell", "burrial", {first:["financial-008","financial-013"]});
   fin("misspell", "cloths", {first:["financial-010","housing-006"]}, {review:"'cloths' is a real word"});
   fin("org", "Helping Hands", {first:"financial-010"});
   fin("org", "Covered With Love", {first:"financial-004"});
@@ -401,21 +414,21 @@ const EVAL_CASES = (() => {
   emp("service", "interview coaching", {first:"employment-007"});
   emp("service", "felony friendly jobs", {first:"employment-002"});
   emp("service", "jobs for felons", {any:["employment-002","employment-003"], an:2});
-  emp("service", "reentry", {any:["employment-003","employment-012","employment-008"]}, {v:"reentry"});
+  emp("service", "reentry", {any:["employment-003","employment-012"]}, {v:"reentry"});
   emp("service", "cdl training", {first:"employment-004"});
   emp("service", "welding classes", {first:"employment-004"});
   emp("service", "cna classes", {first:"employment-004"});
   emp("service", "apprenticeship", {first:"employment-005"}, {v:"apprenticeship"});
-  emp("service", "gas card for work", {any:["employment-006","transport-005"], an:2});
-  emp("service", "bus pass for new job", {first:"employment-006"});
+  emp("service", "gas card for work", {any:["transport-005"], an:2});
+  emp("service", "bus pass for new job", {any:["transport-001"], an:3}, {gap:"withheld 2026-11: no listing documents bus passes for new employees"});
   emp("service", "probation officer", {first:"employment-010"});
   emp("service", "pay court fines", {first:"employment-011"});
   /* Known retrieval issue (fifth review), not a missing service: employment-011 Fines & Fees Assistance
      Program offers "Help paying court fines to restore driving privileges"; "license" does not reach it. */
   emp("service", "get my license back", {first:"employment-011"}, {known:"retrieval: license restoration wording not matched"});
-  emp("service", "replace id after prison", {first:"employment-008"});
+  emp("service", "replace id after prison", {any:["other-003","other-004","other-005"], an:3});
   emp("everyday", "i need a job bad", {cats:{in:["employment"], n:3}});
-  emp("everyday", "just got out of prison need work", {any:["employment-002","employment-003","employment-012","employment-008"]});
+  emp("everyday", "just got out of prison need work", {any:["employment-002","employment-003","employment-012"]});
   emp("everyday", "lost my job", {cats:{in:["employment"], n:2}, notTop:{ids:["financial-015"], n:3}});
   emp("everyday", "need work today", {cats:{in:["employment"], n:3}}, {review:"day labor not represented"});
   emp("everyday", "unemployment benefits", {any:["employment-001"], an:3}, {gap:"no unemployment-insurance resource in the data"});
@@ -470,29 +483,29 @@ const EVAL_CASES = (() => {
 
   /* ── CHILDREN & FAMILY ────────────────────────────────────────────── */
   const ch = add("children");
-  ch("direct", "childcare", {top:["children-008","education-003"], n:3}, {v:"childcare"});
-  ch("direct", "daycare", {top:["children-008","education-003"], n:3}, {v:"daycare"});
+  ch("direct", "childcare", {top:["education-003"], n:3}, {v:"childcare"});
+  ch("direct", "daycare", {top:["education-003"], n:3}, {v:"daycare"});
   ch("direct", "kids", {cats:{in:["children","education","food"], n:3}}, {review:"broad"});
   ch("service", "after school program", {any:["children-004","education-008"], an:2});
   ch("service", "summer program for kids", {first:"children-004"});
   ch("service", "mentoring", {any:["children-001","education-008"], an:2});
   ch("service", "youth counseling", {first:"children-001"});
-  ch("service", "DCS", {top:["children-009","children-002","children-010"], n:4});
-  ch("service", "child welfare", {any:["children-009","children-002"], an:2});
-  /* Review flag removed: the dataset's only child-welfare listings are the DCS ones (children-009, children-002). */
-  ch("service", "CPS", {any:["children-009","children-002"]});
-  ch("service", "foster care", {first:"children-003", not:["senior-003"]});
+  ch("service", "DCS", {top:["children-009","children-010"], n:4});
+  ch("service", "child welfare", {any:["children-009"], an:2});
+  /* Review flag removed: the dataset's child-welfare listing is the DCS office (children-009); the duplicate with a wrong address (children-002) was withheld 2026-11. */
+  ch("service", "CPS", {any:["children-009"]});
+  ch("service", "foster care", {any:["children-009","children-010"], not:["senior-003"]}, {gap:"withheld 2026-11: no listing documents foster-care support"});
   ch("service", "parenting classes", {top:["children-005","children-010"], n:2}, {v:"parenting"});
   ch("service", "reunification", {first:"children-010"});
-  ch("service", "free daycare", {any:["education-002","education-003","children-008"]});
+  ch("service", "free daycare", {any:["education-002","education-003"]});
   ch("everyday", "help with my kids", {cats:{in:["children","education"], n:3}}, {review:"broad"});
-  ch("everyday", "dcs took my kids", {any:["children-009","children-010","children-002"]});
+  ch("everyday", "dcs took my kids", {any:["children-009","children-010"]});
   ch("everyday", "my teenager is out of control", {any:["children-001"], an:3}, {review:"youth counseling is closest"});
-  ch("everyday", "need daycare so i can work", {any:["education-003","children-008"], an:2});
+  ch("everyday", "need daycare so i can work", {any:["education-003"], an:2});
   ch("everyday", "im pregnant and need help", {any:["food-004","children-007"]}, {review:"pregnancy services beyond WIC are not in the data"});
-  ch("misspell", "chidcare", {top:["children-008","education-003"], n:3});
+  ch("misspell", "chidcare", {top:["education-003"], n:3});
   ch("misspell", "parenting clases", {top:["children-005","children-010"], n:3});
-  ch("misspell", "daycar", {any:["children-008","education-003"]});
+  ch("misspell", "daycar", {any:["education-003"]});
   ch("org", "CASY", {first:"children-001"});
   ch("org", "Boys and Girls Club", {top:["children-004","education-008"], n:2});
   ch("org", "Firefly", {first:"children-010"});
@@ -544,13 +557,13 @@ const EVAL_CASES = (() => {
   const imm = add("immigration");
   imm("direct", "immigration", {cats:{in:["immigration","legal"], n:4}}, {v:"immigration"});
   imm("direct", "immigration lawyer", {top:["immigration-004","legal-011"], n:3});
-  imm("service", "DACA", {top:["immigration-001","legal-011"], n:2});
+  imm("service", "DACA", {none:true}, {gap:"withheld 2026-11: Indiana Legal Services' immigration center does not list DACA among its services"});
   imm("service", "citizenship classes", {first:"immigration-003"}, {v:"citizenship"});
   imm("service", "naturalization", {any:["immigration-003","legal-011"], an:2});
   imm("service", "deportation", {first:"legal-011"});
-  imm("service", "work permit", {first:"immigration-001"});
+  imm("service", "work permit", {any:["immigration-004","legal-011"]}, {gap:"withheld 2026-11: no listing documents work-permit help"});
   imm("service", "know your rights spanish", {top:["immigration-002","legal-012"], n:2});
-  imm("service", "green card", {any:["immigration-004","legal-011"]}, {review:"green cards are not named in the data"});
+  imm("service", "green card", {any:["immigration-004","legal-011"]});  /* review flag removed: both listings now name adjustment of status, the green-card application */
   imm("everyday", "papers to stay in the country", {cats:{in:["immigration","legal"], n:3}, notCat:["pet"]});
   imm("everyday", "i need help with my papers", {cats:{in:["immigration","legal"], n:3}, notCat:["pet"]}, {review:"'papers' could mean court or ID papers"});
   imm("everyday", "afraid of ice", {any:["immigration-002","legal-012","legal-011"]}, {review:"enforcement context; 'ice' is ambiguous"});
@@ -567,18 +580,18 @@ const EVAL_CASES = (() => {
   tr("service", "free bus", {first:"transport-001"});
   tr("service", "paratransit", {any:["transport-001","transport-003"], an:2});
   tr("service", "medicaid ride", {first:"transport-002"});
-  tr("service", "ride to doctor", {any:["transport-002","transport-004"], an:2});
+  tr("service", "ride to doctor", {any:["transport-002","transport-003"], an:2});
   tr("service", "senior rides", {first:"transport-003"});
-  tr("service", "volunteer driver", {first:"transport-004"});
-  tr("service", "gas voucher", {top:["transport-005","employment-006"], n:3, notCat:["housing"]}, {v:"voucher"});
+  tr("service", "volunteer driver", {not:["crisis-003"]}, {gap:"withheld 2026-11: no volunteer driver program is documented"});
+  tr("service", "gas voucher", {top:["transport-005"], n:3, notCat:["housing"]}, {v:"voucher"});
   tr("service", "free bike", {first:"transport-006"});
   tr("service", "bus to indianapolis", {first:"transport-007"});
   tr("service", "greyhound", {first:"transport-007"});
   tr("service", "car repair", {first:"transport-008"}, {v:"repair"});
-  tr("everyday", "i need a ride to my appointment", {any:["transport-002","transport-004"], an:3});
+  tr("everyday", "i need a ride to my appointment", {any:["transport-002","transport-003"], an:3});
   tr("everyday", "my car broke down", {first:"transport-008"});
-  tr("everyday", "how do i get to the food pantry", {any:["transport-004"], an:3}, {review:"could mean directions"});
-  tr("everyday", "no way to get to work", {any:["employment-006","transport-001","transport-004"]});
+  tr("everyday", "how do i get to the food pantry", {any:["transport-001","transport-003"], an:3}, {review:"could mean directions"});
+  tr("everyday", "no way to get to work", {any:["transport-001","transport-005"]}, {known:"the city bus is listed but \"get to work\" does not reach transportation; this passed only through two withheld listings"});
   tr("misspell", "transportaion", {cats:{in:["transportation"], n:3}});
   tr("misspell", "busses", {top:["transport-001"], n:2});
   tr("misspell", "bycicle", {first:"transport-006"}, {review:"data says 'bike'"});
@@ -599,49 +612,49 @@ const EVAL_CASES = (() => {
   oth("service", "social security card", {first:"other-005"});
   oth("service", "voter id", {first:"other-003"});
   oth("everyday", "i need a computer to apply for jobs", {any:["digital-001"], an:3});
-  oth("everyday", "i lost my id", {any:["other-003","employment-008"], an:2, notTop:{ids:["financial-015"], n:3}});
+  oth("everyday", "i lost my id", {any:["other-003"], an:2, notTop:{ids:["financial-015"], n:3}});
   oth("everyday", "replace my social security card", {first:"other-005"});
   oth("misspell", "interent", {any:["digital-001","digital-002"]});
   oth("misspell", "birth certifcate", {first:"other-004"});
   oth("misspell", "socail security card", {first:"other-005"});
-  oth("org", "BMV", {first:["other-003","employment-008"]});
+  oth("org", "BMV", {first:["other-003"]});
   oth("org", "Comcast", {first:"digital-002"});
   oth("org", "library", {cats:{in:["other","education","employment","legal","transportation","financial"], n:3}}, {review:"many library-hosted programs"});
 
   /* ── MULTIPLE NEEDS ───────────────────────────────────────────────── */
   const multi = add("multi");
-  multi("multi", "cant pay rent", {first:"housing-004", any:["financial-002","financial-013"], an:6, notCat:["pet"]});
-  multi("multi", "need ride doctor", {any:["transport-002","transport-004"], an:2});
+  multi("multi", "cant pay rent", {first:["housing-003","financial-013"], any:["financial-013","financial-014","financial-015"], an:3, notCat:["pet"]});  /* was first housing-004 (withheld), trustee in top 6 */
+  multi("multi", "need ride doctor", {any:["transport-002","transport-003"], an:2});
   multi("multi", "food for my kids", {any:["food-005","food-004","children-007"], an:5, notCat:["pet"]});
   multi("multi", "homeless with a dog", {has:["pet-001","housing-002"], any:["pet-001"], an:4}, {review:"no listing confirms pets are allowed in shelter"});
-  multi("multi", "leaving abuse with my kids", {first:["crisis-002","children-006"], has:["housing-001"], not:["crisis-004"]});
-  multi("multi", "welding classes and a gas card", {needs:[["employment-004"], ["transport-005","employment-006"]], not:["children-005"]}, {src:"codex2"});
-  multi("multi", "lost my job need help with bills", {any:["employment-001","employment-009"], an:5, has:["financial-002"], notTop:{ids:["financial-015"], n:3}});
-  multi("multi", "no insurance need medicine", {any:["financial-016","health-002","health-009"], has:["financial-016"]});
+  multi("multi", "leaving abuse with my kids", {first:["crisis-002","children-006"], has:["housing-001"], not:["recovery-016"]});  /* was not:["crisis-004"] */
+  multi("multi", "welding classes and a gas card", {needs:[["employment-004"], ["transport-005"]], not:["children-005"]}, {src:"codex2"});
+  multi("multi", "lost my job need help with bills", {any:["employment-001","employment-009"], an:5, has:["financial-013"], notTop:{ids:["financial-015"], n:3}});
+  multi("multi", "no insurance need medicine", {any:["financial-016","health-009"], has:["financial-016"]});
   multi("multi", "just got out of jail need work", {any:["employment-002","employment-003","employment-012"], an:3});
   multi("multi", "homeless veteran", {any:["financial-012","health-006","housing-002"]}, {review:"no veteran-specific shelter"});
   /* Corrected (third review): the earlier expectation required two specific Light House listings in the top 4.
      The need is useful early coverage of both food and shelter, not particular organizations. */
   multi("multi", "need food and shelter tonight", {coverage:{cats:["food","housing"], n:4}});
-  multi("multi", "need help with rent and utilities", {first:"housing-004"});
+  multi("multi", "need help with rent and utilities", {first:"financial-013"});
   multi("multi", "sober living that takes kids", {any:["recovery-007","recovery-011"]});
-  multi("multi", "ride to the food pantry", {first:"transport-004"});
-  multi("multi", "free lawyer for eviction", {any:["legal-001","legal-004"], an:2});
-  multi("multi", "need id to get a job", {any:["employment-008","other-003"], an:2});
-  multi("multi", "single mom need daycare and food", {has:["education-003"], any:["education-003","children-008","food-004"], an:5}, {review:"two needs, no single best listing"});
+  multi("multi", "ride to the food pantry", {coverage:{cats:["transportation","food"], n:3}});
+  multi("multi", "free lawyer for eviction", {any:["legal-001"], an:2});
+  multi("multi", "need id to get a job", {any:["other-003"], an:2}, {known:"the BMV state ID listing is returned but ranks below job listings; this passed only through the withheld \"BMV Help Desk\" listing"});
+  multi("multi", "single mom need daycare and food", {has:["education-003"], any:["education-003","food-004"], an:5}, {review:"two needs, no single best listing"});
   multi("multi", "pregnant and homeless", {any:["housing-001","food-004"], an:3}, {review:"two needs"});
   multi("multi", "need diapers and formula", {top:["financial-004","children-007"], n:4});
-  multi("multi", "out of jail need id and a job", {any:["employment-008","employment-002","employment-003"]});
-  multi("multi", "help paying funeral and rent", {any:["financial-002","financial-008"], an:2});
+  multi("multi", "out of jail need id and a job", {any:["employment-002","employment-003"], needs:[["other-003","other-004","other-005"],["employment-002","employment-003","employment-012"]]});  /* separate ID need restored (employment-008, which stood for both, withheld 2026-11) */
+  multi("multi", "help paying funeral and rent", {any:["financial-008","financial-013"], an:2});
   multi("multi", "senior needs ride to doctor", {first:"transport-003"},
     {review:"transport-003 serves seniors (any destination); transport-002 serves rides to doctor appointments but requires Medicaid. The data supports either first."});
   multi("multi", "detox and then sober living", {has:["recovery-015"], cats:{in:["recovery"], n:3}});
   multi("multi", "veteran behind on utilities", {first:"financial-012"});
   multi("multi", "my children od and need shelter and transportation",
-    {g:"overdose", needs:[["housing-001","housing-002","housing-006"], ["transport-001","transport-004"]]}, {src:"codex"});
+     {g:"overdose", needs:[["housing-001","housing-002","housing-006"], ["transport-001","transport-003"]]}, {src:"codex"});
   multi("multi", "someone overdosed and need food pantry and shelter and transportation",
-    {g:"overdose", has:["crisis-004"], needs:[["food-008","food-009","food-010","food-011","food-012","food-003","food-001"],
-      ["housing-001","housing-002","housing-006"], ["transport-001","transport-004"]]}, {src:"codex"});
+     {g:"overdose", needs:[["food-008","food-009","food-010","food-011","food-012","food-003","food-001"],
+      ["housing-001","housing-002","housing-006"], ["transport-001","transport-003"]]}, {src:"codex"});
 
   /* ── AMBIGUOUS / GENERIC ──────────────────────────────────────────── */
   const amb = add("ambiguous");
@@ -656,9 +669,9 @@ const EVAL_CASES = (() => {
   amb("ambiguous", "center", {max:25}, {review:"appears in many names"});
   amb("ambiguous", "house", {max:25}, {review:"housing vs recovery houses"});
   amb("ambiguous", "vaccines", {top:["health-003","pet-002"], n:3}, {review:"human vs pet vaccines"});
-  amb("ambiguous", "counseling", {any:["health-001","health-004","children-001","financial-011"]}, {review:"mental health, youth, or debt counseling"});
+  amb("ambiguous", "counseling", {any:["health-001","children-001","financial-011"]}, {review:"mental health, youth, or debt counseling"});
   amb("ambiguous", "training", {cats:{in:["employment","education"], n:3}}, {review:"job vs education"});
-  amb("ambiguous", "gas", {any:["transport-005","financial-001","housing-004"]}, {review:"gas utility vs gasoline"});
+  amb("ambiguous", "gas", {any:["transport-005","financial-001"]}, {review:"gas utility vs gasoline"});
   amb("ambiguous", "bank", {}, {review:"food bank vs diaper bank"});
   amb("ambiguous", "treatment", {cats:{in:["recovery","health"], n:3}}, {review:"addiction vs medical"});
   amb("ambiguous", "benefits", {any:["financial-006","financial-005","food-002","legal-001"]}, {review:"which benefits"});

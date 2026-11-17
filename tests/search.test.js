@@ -16,6 +16,7 @@ function run(query) {
     crisis: search.analysis.crisisMatches || [],
     routes: search.analysis.routes || {},
     person: search.analysis.person || {sex:null, adult:false},
+    minor: search.analysis.explicitMinor ? "explicit" : search.analysis.possibleMinor ? "possible" : "no",
     ids: search.results.map(r => r.id),
     categories: search.results.map(r => r.category)
   };
@@ -72,6 +73,11 @@ const expect = {
   anyInTop: (ids, n) => r => ids.some(id => r.ids.slice(0, n).includes(id)) ? null : `none of ${ids.join(" ")} in top ${n} (${r.ids.slice(0, n).join(" ") || "no results"})`,
   /* The sex the search attributes to the person who needs the help. */
   recipientSex: sex => r => r.person.sex === sex ? null : `recipient sex ${JSON.stringify(r.person.sex)}, expected ${JSON.stringify(sex)}`,
+  /* How the age of the person who needs help was read: "explicit" (stated
+     under 18), "possible" (youth wording, no age) or "no"; and, when given,
+     whether that person was read as an adult. */
+  ageReading: (minor, adult) => r => r.minor !== minor ? `age read as ${r.minor}, expected ${minor}` :
+    adult !== undefined && r.person.adult !== adult ? `person read as adult=${r.person.adult}, expected ${adult}` : null,
   /* None of these listings is returned. */
   noneOf: ids => r => {
     const bad = r.ids.filter(id => ids.includes(id));
@@ -87,6 +93,23 @@ const expect = {
       return !pattern.test(`${x.name} ${(x.tags || []).join(" ")} ${x.description}`);
     });
     return bad.length ? `unrelated results: ${bad.join(" ")}` : null;
+  },
+  /* Every returned listing in ids ranks above every returned listing in others. */
+  allBefore: (ids, others) => r => {
+    const last = Math.max(-1, ...ids.map(id => r.ids.indexOf(id)));
+    const firstOther = Math.min(Infinity, ...others.map(id => r.ids.indexOf(id)).filter(i => i >= 0));
+    return last < firstOther ? null : `${r.ids[firstOther]} (#${firstOther + 1}) ranks above ${r.ids[last]} (#${last + 1})`;
+  },
+  /* The top n results are all among ids. */
+  topWithin: (ids, n) => r => {
+    const off = r.ids.slice(0, n).filter(id => !ids.includes(id));
+    return r.ids.length < n ? `only ${r.ids.length} results` : off.length ? `top ${n} include ${off.join(" ")}` : null;
+  },
+  /* These listings, when returned, are the last ones listed. */
+  listedLast: ids => r => {
+    const shown = ids.filter(id => r.ids.includes(id));
+    const tail = r.ids.slice(r.ids.length - shown.length);
+    return shown.every(id => tail.includes(id)) ? null : `${shown.join(" ")} are not the last ${shown.length} results (${tail.join(" ")})`;
   },
   /* The first of ids is returned and ranks above every one of others. */
   anyBefore: (ids, others) => r => {
@@ -132,10 +155,31 @@ const domestic = [
   expect.first("crisis-002"), expect.inTop("housing-001", 5),
   expect.noCategory("pet"), expect.absent("senior-003")
 ];
+/* 2026-11 accuracy patch: these checks required crisis-004 ("Terre Haute
+   CARES") first. That listing was withheld because no source confirms the
+   program, its phone number or its naloxone claim. The 911 overdose guidance
+   is still required. The first listing under it is now recovery-016, the
+   statewide naloxone map and kit-request listing read from Overdose Lifeline
+   and the Indiana Department of Health (its text begins "For an overdose
+   happening now, call 911"). Any other listings must be crisis, recovery or
+   health services, never emergency funds (crisis-003) or the general help line. */
 const overdose = [
-  expect.urgent(OVERDOSE), expect.first("crisis-004"), expect.noCategory("pet")
+  expect.urgent(OVERDOSE), expect.first("recovery-016"), expect.noCategory("pet"), expect.absent("crisis-003"), expect.absent("crisis-005"),
+  r => {
+    const bad = r.ids.filter((_, i) => !["crisis", "recovery", "health"].includes(r.categories[i]));
+    return bad.length ? `unrelated listings under overdose guidance: ${bad.join(" ")}` : null;
+  }
 ];
 const notHumanCrisis = [expect.noCrisisMatch(), expect.urgent(null)];
+/* Clinical providers, by their own listings: Hamilton Center ("substance use
+   treatment"), Harsha ("detox and dual-diagnosis treatment"), WIN Recovery
+   (opioid treatment "with counseling"). Residential programs are the listings
+   tagged sober living, recovery housing or transitional housing. */
+const CLINICAL = ["health-001", "recovery-015", "recovery-014"];
+const RESIDENTIAL = ["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-007",
+  "recovery-008", "recovery-011", "recovery-012", "recovery-013"];
+/* Listings whose own text limits them to adults ("Must be 18 or older", "for adult males", "for adults"). */
+const ADULTS_ONLY_RECOVERY = ["recovery-014", "recovery-013", "recovery-002"];
 
 const CASES = [
   /* Crisis recognition — audit failures */
@@ -174,19 +218,26 @@ const CASES = [
   ["homless", [expect.topCategories(["housing"], 3), expect.inTop("housing-002", 3)]],
   ["shleter", [expect.topCategories(["housing"], 3), expect.inTop("housing-001", 3)]],
   ["docter", [expect.topCategories(["health"], 5)]],
-  ["imigration", [expect.topCategories(["immigration"], 4)]],
+  /* (2026-11 accuracy patch: three immigration listings remain after the
+     unverified DACA listing immigration-001 was withheld; Indiana Legal
+     Services' immigration center, verified, is immigration-004 and legal-011) */
+  ["imigration", [expect.topCategories(["immigration"], 3), expect.first("immigration-004"), expect.returned("legal-011")]],
   ["employmint", [expect.topCategories(["employment"], 5)]],
   ["papers to stay in the country", [
-    expect.noCategory("pet"), expect.firstCategory("immigration"), expect.inTop("immigration-001", 3)
+    expect.noCategory("pet"), expect.firstCategory("immigration"), expect.inTop("immigration-004", 3)
   ]],
   ["i need help with my papers to stay in the country", [
     expect.noCategory("pet"), expect.firstCategory("immigration")
   ]],
 
   /* Cross-category and edge cases */
+  /* (2026-11 accuracy patch: this required housing-004 first. That listing
+     named an agency that does not serve Vigo County and a rental-assistance
+     program the local agency does not document, so it was withheld. The
+     Harrison Township Trustee documents rent help and must be in the top two.) */
   ["cant pay rent", [
-    expect.urgent(null), expect.first("housing-004"),
-    expect.inTop("housing-003", 5), expect.inTop("financial-013", 5), expect.noCategory("pet")
+    expect.urgent(null), expect.inTop("financial-013", 2),
+    expect.inTop("housing-003", 5), expect.noCategory("pet")
   ]],
   ["zxqv blorpt", [expect.status("ok"), expect.noResults(), expect.urgent(null)]],
 
@@ -213,14 +264,15 @@ const CASES = [
 
   /* Review findings: mixed urgent needs keep every explicit need */
   ["someone overdosed and i want to die and i need food pantry", [
-    expect.urgentList([OVERDOSE, MENTAL]), expect.returned("crisis-004"), expect.returned("crisis-001"),
+    expect.urgentList([OVERDOSE, MENTAL]), expect.returned("crisis-001"),
     expect.anyReturned(["food-008","food-009","food-010","food-011","food-012"])
   ]],
   ["i want to die and someone overdosed", [expect.urgentList([OVERDOSE, MENTAL])]],
+  /* (2026-11 accuracy patch: crisis-004 withheld, see `overdose` above; every
+     stated need is still required, and emergency funds must not appear) */
   ["someone overdosed and need food pantry and shelter and transportation", [
-    expect.urgent(OVERDOSE), expect.returned("crisis-004"), expect.someCategory("food"),
-    expect.someCategory("housing"), expect.someCategory("transportation"),
-    expect.aheadOfCategory("crisis-004", "food"), expect.aheadOfCategory("crisis-004", "housing")
+    expect.urgent(OVERDOSE), expect.someCategory("food"),
+    expect.someCategory("housing"), expect.someCategory("transportation"), expect.absent("crisis-003")
   ]],
 
   /* Second review: genuine crisis phrases with ordinary continuations */
@@ -243,7 +295,7 @@ const CASES = [
 
   /* Emergency-specific resources rank before routine help; other needs stay */
   ["someone overdosed and i want to die and i need food pantry", [
-    expect.aheadOfCategory("crisis-004", "food"), expect.aheadOfCategory("crisis-001", "food"),
+    expect.aheadOfCategory("crisis-001", "food"),
     expect.notAheadOfCategory("crisis-003", "food"), expect.notAheadOfCategory("crisis-005", "food"),
     expect.notAheadOfCategory("crisis-008", "food"), expect.someCategory("food")
   ]],
@@ -264,14 +316,16 @@ const CASES = [
   ["Lost Creek", [expect.first("financial-015")]],
   ["welding classes", [expect.first("employment-004"), expect.before("employment-004", "children-005")]],
   ["cna classes", [expect.first("employment-004"), expect.before("employment-004", "children-005")]],
-  ["transportation", [expect.categoryCount("transportation", 8)]],
+  ["transportation", [expect.categoryCount("transportation", 7)]],  /* 7 since transport-004 was withheld (2026-11 accuracy patch) */
   ["shelter", [expect.categoryCount("housing", 5)]],
   ["food", [expect.categoryCount("food", 10)]],
 
   /* Affordability among relevant results */
   ["free sober living", [
     expect.first("recovery-012"), expect.before("recovery-012", "recovery-002"),
-    expect.before("recovery-010", "recovery-002"), expect.before("recovery-010", "recovery-004")
+    /* recovery-010 (Club Soda, no cost documented) withheld 2026-11; Phoenix
+       House and Roadways to Recovery document no cost either */
+    expect.before("recovery-007", "recovery-002"), expect.before("recovery-003", "recovery-004")
   ]],
 
   /* Third review: clause boundaries. A benign span excludes only itself. */
@@ -309,13 +363,15 @@ const CASES = [
 
   /* "opioid" alone is not acute-emergency evidence; cost never outranks acute help */
   ["someone overdosed and need food pantry", [
-    expect.urgent(OVERDOSE), expect.first("crisis-004"), expect.notAheadOfCategory("recovery-014", "food")
+    expect.urgent(OVERDOSE), expect.notAheadOfCategory("recovery-014", "food"), expect.someCategory("food", 3), expect.absent("crisis-003")
   ]],
-  ["someone overdosed need free help", [expect.urgent(OVERDOSE), expect.first("crisis-004")]],
+  ["someone overdosed need free help", overdose],
 
-  /* Separate needs vs qualifiers */
+  /* Separate needs vs qualifiers
+     (2026-11 accuracy patch: transport-004, a "volunteer driver program" the
+     named agency does not document, was withheld) */
   ["ride to the food pantry", [
-    expect.inTop("transport-004", 3), expect.someCategory("transportation", 3), expect.someCategory("food", 3)
+    expect.someCategory("transportation", 3), expect.someCategory("food", 3)
   ]],
   ["food for my kids", [
     expect.anyReturned(["food-005","food-004"]), r => ["food-005","food-004"].some(id => r.ids.slice(0, 5).includes(id)) ? null : "no child-focused food help in top 5",
@@ -350,7 +406,7 @@ const CASES = [
   ["she took too many pills", [expect.urgentList([EMERGENCY]), expect.status("ok")]],
   ["my baby stopped breathing", [expect.urgentList([EMERGENCY])]],
   ["he isnt breathing", [expect.urgentList([EMERGENCY])]],
-  ["someone overdosed and is not breathing", [expect.urgentList([OVERDOSE, EMERGENCY]), expect.first("crisis-004")]],
+  ["someone overdosed and is not breathing", [expect.urgentList([OVERDOSE, EMERGENCY]), expect.absent("crisis-003")]],
   ["she took too many pills and i want to die", [expect.urgentList([EMERGENCY, MENTAL])]],
   /* ...and ordinary expressions with the same words do not */
   ["breathing exercises for stress", [expect.urgent(null)]],
@@ -529,13 +585,13 @@ const CASES = [
 
   /* Conservative spelling repairs */
   ["veternarian", [expect.first("pet-002")]],
-  ["rentle assistance", [expect.firstOneOf(["housing-004","housing-003"]), expect.topCategories(["housing"], 2)]],
+  ["rentle assistance", [expect.first("housing-003"), expect.inTop("financial-013", 2)]],  /* housing-004 withheld: one housing listing documents rent help, then the trustee */
   ["pre school", [expect.first("education-002")]],
   ["free compter", [expect.first("digital-001")]],
 
   /* Gas cards / vouchers are one service across categories */
-  ["gas voucher", [expect.first("transport-005"), expect.returned("employment-006"), expect.noCategory("housing")]],
-  ["gas card", [expect.returned("transport-005"), expect.returned("employment-006")]],
+  ["gas voucher", [expect.first("transport-005"), expect.noCategory("housing")]],  /* employment-006 withheld (2026-11 accuracy patch) */
+  ["gas card", [expect.returned("transport-005")]],
   ["help", [expect.status("empty-meaningful"), expect.urgent(null)]],
   ["food pantry", [expect.topCategories(["food"], 10), expect.notOnlyCategory("pet")]],
 
@@ -612,18 +668,20 @@ const CASES = [
     expect.absent("housing-004"), expect.absent("housing-006")]],
 
   /* Meals: public meals before meals limited to a group, and a residential
-     program's meals for its residents are not a meal service */
+     program's meals for its residents are not a meal service. (These checked
+     Club Soda, recovery-010, withheld 2026-11; Next Step's residents' meals
+     are the remaining case.) */
   ["free meals", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.returned("food-005"),
-    expect.before("food-007", "food-005"), expect.absent("recovery-010")]],
-  ["i need a meal", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.absent("recovery-010"),
+    expect.before("food-007", "food-005"), expect.absent("recovery-011")]],
+  ["i need a meal", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.absent("recovery-011"),
     expect.before("food-007", "senior-001")]],
-  ["hot meal today", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.absent("recovery-010")]],
+  ["hot meal today", [expect.firstOneOf(["food-003", "food-006", "food-007"]), expect.absent("recovery-011")]],
   ["i need food today", [expect.sameOrderAs("food")]],
   ["food pantry near me", [expect.topCategories(["food"], 8)]],
   /* ...the program asked for by name, or a named group, still comes first */
   ["free and reduced lunch", [expect.first("food-005")]],
   ["meals for seniors", [expect.first("senior-001")]],
-  ["sober living with meals", [expect.returned("recovery-010")]],
+  ["sober living with meals", [expect.first("recovery-011")]],  /* Next Step documents meals; recovery-010 withheld 2026-11 */
 
   /* Transportation: city bus requests lead to the bus guide and the city
      bus service first; Greyhound and Area 7 stay distinct */
@@ -647,15 +705,15 @@ const CASES = [
     expect.anyInTop(["health-001", "health-004", "crisis-004", "recovery-014", "recovery-015"], 3),
     expect.noCategory("children"), expect.noCategory("pet")]]),
   ["i need treatment for opioid addiction", [expect.anyInTop(["recovery-014", "health-001"], 2)]],
-  ["my son is using heroin", [expect.returned("crisis-004"), expect.returned("recovery-014")]],
+  ["my son is using heroin", [expect.returned("health-001"), expect.returned("recovery-014")]],  /* crisis-004 withheld */
   /* ...housing named: sober living still leads */
-  ["sober living for my son", [expect.firstCategory("recovery"), expect.anyInTop(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-010", "recovery-011"], 3)]],
+  ["sober living for my son", [expect.firstCategory("recovery"), expect.anyInTop(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-011"], 3)]],
   /* ...ordinary uses of "using" and prescribed medication are not addiction */
   ["my son is using the bus", [expect.urgent(null), expect.noCategory("recovery")]],
   ["my son is using a computer", [expect.urgent(null), expect.noCategory("recovery")]],
   ["my son takes prescribed medication", [expect.urgent(null), expect.noCategory("recovery")]],
   /* ...described emergencies keep their existing guidance */
-  ["my son overdosed on heroin", [expect.urgentIncludes(OVERDOSE), expect.first("crisis-004")]],
+  ["my son overdosed on heroin", [expect.urgentIncludes(OVERDOSE), expect.first("recovery-016"), expect.inTop("recovery-014", 2), expect.absent("crisis-003")]],  /* crisis-004 withheld; the naloxone listing, then WIN (opioid treatment) */
   ["my son is not breathing after using heroin", [expect.urgentIncludes(EMERGENCY)]],
 
   /* Codex review: a person described as unconscious or unresponsive gets the
@@ -690,15 +748,15 @@ const CASES = [
      keep WIN near the top */
   ...["my daughter is using meth", "my father has a drinking problem", "I need alcohol treatment",
       "meth addiction treatment", "someone in my family has a drinking problem"].map(query => [query, [
-    expect.urgent(null), expect.before("health-001", "recovery-014"), expect.before("health-004", "recovery-014"),
+    expect.urgent(null), expect.before("health-001", "recovery-014"),
     expect.before("recovery-015", "recovery-014")]]),
   ...["my son is using heroin", "my husband is addicted to opioids", "I need treatment for opioid addiction"].map(query => [query, [
     expect.inTop("recovery-014", 2)]]),
   ["I need help with substance use", [expect.urgent(null), expect.anyInTop(["health-001", "health-004", "recovery-015"], 3)]],
-  ["I need sober housing", [expect.firstCategory("recovery"), expect.anyInTop(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-010", "recovery-011", "recovery-012"], 3)]],
+  ["I need sober housing", [expect.firstCategory("recovery"), expect.anyInTop(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-011", "recovery-012"], 3)]],
   ["I need addiction treatment and somewhere to live", [
     expect.anyInTop(["health-001", "health-004", "recovery-014", "recovery-015"], 3),
-    expect.anyReturned(["recovery-002", "recovery-010", "recovery-011", "recovery-012", "housing-002"])]],
+    expect.anyReturned(["recovery-002", "recovery-011", "recovery-012", "housing-002"])]],
 
   /* Codex review: "my child" says who needs help; a treatment request
      still leads with treatment, ahead of child-welfare services. Final
@@ -728,8 +786,8 @@ const CASES = [
   ...["my 25 year old son is using heroin", "my son is using heroin"].map(query => [query, [expect.first("recovery-014")]]),
   /* ...while child-welfare, childcare and other requests keep their services */
   ["I need help with child custody", [expect.firstCategory("legal")]],
-  ["I need child protective services", [expect.returned("children-002")]],
-  ["I need childcare", [expect.firstCategory("children")]],
+  ["I need child protective services", [expect.first("children-009")]],  /* children-002 (wrong address, duplicate) withheld; children-009 matches the state DCS page */
+  ["I need childcare", [expect.first("education-003")]],  /* the state childcare voucher listing; children-008 withheld */
   ["my child needs medical care", [expect.firstCategory("health")]],
   ["food for my children", [expect.firstCategory("food")]],
 
@@ -772,13 +830,13 @@ const CASES = [
   ...["I need anxiety treatment.", "I need mental health counseling."].map(query => [query, [
     expect.urgent(null), expect.anyInTop(["health-005", "health-001", "health-004"], 3),
     expect.noneOf(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-007", "recovery-008",
-      "recovery-009", "recovery-010", "recovery-011", "recovery-012", "recovery-013"]), expect.noCategory("housing")]]),
+      "recovery-009", "recovery-011", "recovery-012", "recovery-013"]), expect.noCategory("housing")]]),
   ["I need medication assistance.", [expect.first("financial-016")]],
   ["I need help paying for prescriptions.", [expect.anyInTop(["senior-004", "financial-016", "crisis-003"], 3), expect.noCategory("recovery")]],
   /* ...while housing requests, including housing for that population, keep it */
   ["I need transitional housing for mental health and addiction recovery.", [expect.inTop("recovery-013", 3)]],
   ["I need housing while receiving addiction treatment.", [
-    expect.anyInTop(["recovery-002", "recovery-009", "recovery-010", "recovery-011", "recovery-012", "recovery-013"], 3)]],
+    expect.anyInTop(["recovery-002", "recovery-009", "recovery-011", "recovery-012", "recovery-013"], 3)]],
   ["I have anxiety and need somewhere to live.", [expect.someCategory("housing", 3), expect.anyInTop(["health-005", "health-001", "health-004"], 5)]],
 
   /* Final review: a stated person (an adult man, a woman, a son) is not
@@ -799,10 +857,10 @@ const CASES = [
   ["I am a mother with children and need housing.", [expect.inTop("housing-001", 2), expect.inTop("housing-002", 2)]],
   /* ...and a men-only or women-only sober house does not lead for the other sex */
   ["I am a woman and need sober housing.", [expect.firstCategory("recovery"),
-    expect.anyBefore(["recovery-007", "recovery-008", "recovery-009", "recovery-010", "recovery-011", "recovery-012"],
+    expect.anyBefore(["recovery-007", "recovery-008", "recovery-009", "recovery-011", "recovery-012"],
       ["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006"])]],
   ["sober living for my son", [
-    expect.anyBefore(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-010"],
+    expect.anyBefore(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006"],
       ["recovery-007", "recovery-008", "recovery-009"])]],
   /* ...no person stated: unchanged (no eligibility is assumed) */
   ...["I need somewhere to stay.", "I need somewhere to live."].map(query => [query, [
@@ -814,20 +872,22 @@ const CASES = [
   /* Final review: a son or daughter helping with the search is not the
      person who needs housing. With the speaker's sex unstated, no men-only
      or women-only program is moved for the helper's sex: Odyssey (Men
-     only) and Kathy's Hope (Women only) keep their usual early places, as
+     only) and Phoenix House (Women only) keep their usual early places, as
      for "I need sober housing", and Bethany stays first as for "I need
-     somewhere to stay" */
+     somewhere to stay". (Until the 2026-11 accuracy patch the women-only
+     example was recovery-009, which was withheld: the only state-certified
+     "Kathy's Hope" is in Valparaiso.) */
   ...["My daughter is helping me find sober housing.", "My son is helping me find sober housing."].map(query => [query, [
-    expect.recipientSex(null), expect.firstCategory("recovery"), expect.inTop("recovery-002", 2), expect.inTop("recovery-009", 4),
-    expect.before("recovery-002", "recovery-011"), expect.before("recovery-009", "recovery-011")]]),
+    expect.recipientSex(null), expect.firstCategory("recovery"), expect.inTop("recovery-002", 2), expect.inTop("recovery-007", 4),
+    expect.before("recovery-002", "recovery-011"), expect.before("recovery-007", "recovery-011")]]),
   ["My daughter is helping me find somewhere to stay.", [expect.recipientSex(null), expect.first("housing-001")]],
   ["My son is helping me find housing.", [expect.recipientSex(null), expect.before("housing-001", "housing-006")]],
   /* ...a stated recipient still counts, including the speaker beside a helper */
   ["My daughter needs sober housing.", [expect.recipientSex("female"),
-    expect.anyBefore(["recovery-007", "recovery-008", "recovery-009", "recovery-010", "recovery-011", "recovery-012"],
+    expect.anyBefore(["recovery-007", "recovery-008", "recovery-009", "recovery-011", "recovery-012"],
       ["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006"])]],
   ["My son needs sober housing.", [expect.recipientSex("male"),
-    expect.anyBefore(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-010"],
+    expect.anyBefore(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006"],
       ["recovery-007", "recovery-008", "recovery-009"])]],
   ...["I am an adult man and need somewhere to live.", "My adult son needs somewhere to stay.", "My 25-year-old son needs housing."]
     .map(query => [query, [expect.recipientSex("male")]]),
@@ -836,7 +896,7 @@ const CASES = [
   ["I am a woman, and my son is helping me find housing.", [expect.recipientSex("female"), expect.before("housing-001", "housing-006")]],
   /* ...and the person the request is for, not the helper */
   ["My daughter is helping me find sober housing for my son.", [expect.recipientSex("male"),
-    expect.anyBefore(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-010"],
+    expect.anyBefore(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006"],
       ["recovery-007", "recovery-008", "recovery-009"])]],
   ["My son is helping my daughter find housing.", [expect.recipientSex("female"), expect.before("housing-001", "housing-006")]],
   ...["My mother takes medication every day.", "I take my prescription every morning."].map(query => [query, [
@@ -845,9 +905,9 @@ const CASES = [
   ["I need somewhere to stay for 90 days.", [expect.anyInTop(["recovery-013", "housing-002", "housing-001", "housing-006", "housing-007"], 3)]],
   ["I need transitional housing.", [expect.first("recovery-013")]],
   ["I need sober housing for several months.", [expect.firstCategory("recovery"),
-    expect.anyInTop(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-010", "recovery-011", "recovery-012"], 3)]],
+    expect.anyInTop(["recovery-002", "recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-011", "recovery-012"], 3)]],
   ["I need addiction treatment and housing.", [expect.firstCategory("recovery"),
-    expect.anyInTop(["recovery-002", "recovery-010", "recovery-011", "recovery-012", "recovery-013"], 3),
+    expect.anyInTop(["recovery-002", "recovery-011", "recovery-012", "recovery-013"], 3),
     expect.anyReturned(["health-001", "health-004", "recovery-014", "recovery-015"])]],
   /* ...a comma does not separate "as prescribed" from its drug, but misuse
      and a separate request still count */
@@ -861,7 +921,7 @@ const CASES = [
      for adults; other programs' ages are not documented and not claimed */
   ...["My 14 year old needs sober housing.", "My 16-year-old son needs recovery housing."].map(query => [query, [
     expect.urgent(null), expect.firstCategory("recovery"),
-    expect.anyBefore(["recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-007", "recovery-008", "recovery-009", "recovery-010", "recovery-011", "recovery-012"],
+    expect.anyBefore(["recovery-003", "recovery-004", "recovery-005", "recovery-006", "recovery-007", "recovery-008", "recovery-009", "recovery-011", "recovery-012"],
       ["recovery-002", "recovery-013", "recovery-014"])]]),
   ["My daughter is 15 and needs addiction treatment.", [
     expect.urgent(null), expect.firstOneOf(["health-001", "health-004", "crisis-004", "recovery-015", "recovery-001"]),
@@ -878,7 +938,7 @@ const CASES = [
      as the problem (no opioid program ahead of general treatment) */
   ...["I am not using heroin. I need help with meth.", "My son isn't using heroin, but he needs alcohol treatment.",
       "my son is not using heroin but needs meth treatment"].map(query => [query, [
-    expect.urgent(null), expect.before("health-001", "recovery-014"), expect.before("health-004", "recovery-014"),
+    expect.urgent(null), expect.before("health-001", "recovery-014"),
     expect.before("recovery-015", "recovery-014")]]),
   /* ...stated misuse of a prescribed drug is still misuse */
   ["I was prescribed oxycodone, but I'm taking more than prescribed.", [
@@ -889,18 +949,191 @@ const CASES = [
   /* Rent assistance: documented rent help across categories (trustees
      included), not every program named "assistance" */
   ...["rent assistance", "help paying rent", "rental assistance"].map(query => [query, [
-    expect.anyInTop(["housing-004", "financial-002", "financial-013"], 2), expect.returned("housing-004"),
-    expect.returned("financial-002"), expect.returned("financial-013"), expect.returned("financial-014"),
+    expect.inTop("financial-013", 2), expect.returned("housing-003"),
+    expect.returned("financial-013"), expect.returned("financial-014"),
     expect.absent("financial-016"), expect.absent("financial-008"), expect.absent("financial-001"),
     expect.absent("financial-005"), expect.absent("financial-012")]]),
   /* ...a combined request keeps both needs; a broad request stays broad */
-  ["need help with rent and utilities", [expect.first("housing-004"), expect.returned("financial-001")]],
-  ["i need financial help", [expect.returned("financial-016"), expect.returned("financial-008"), expect.returned("financial-001"), expect.returned("financial-002")]],
+  ["need help with rent and utilities", [expect.first("financial-013"), expect.returned("financial-001")]],  /* the trustee documents both; housing-004 withheld */
+  ["i need financial help", [expect.returned("financial-016"), expect.returned("financial-008"), expect.returned("financial-001"), expect.returned("financial-013")]],
 
   /* Accepted staging searches stay as they are */
-  ["i need a gas voucher", [expect.first("transport-005"), expect.returned("employment-006")]],
+  ["i need a gas voucher", [expect.first("transport-005")]],
   ["terre haute bus route", [expect.busRoute(true), expect.first("transport-001")]],
-  ["im homeless", [expect.returned("housing-002"), expect.returned("housing-006"), expect.returned("housing-001")]]
+  ["im homeless", [expect.returned("housing-002"), expect.returned("housing-006"), expect.returned("housing-001")]],
+
+  /* 2026-11 final corrections: a counseling or treatment request lists every
+     returned clinical provider before every residential program. (Oak Street
+     House, transitional housing, had become first for these once Centerstone
+     was withheld: "substance use" in its description was read as an
+     affiliation, which bypassed the treatment-before-housing order.) */
+  ["I need substance use counseling", [
+    expect.urgent(null), expect.firstOneOf(["health-001", "recovery-015"]), expect.topWithin(CLINICAL, 3),
+    expect.allBefore(CLINICAL, RESIDENTIAL), expect.returned("recovery-013")]],
+  /* (This check also covered "my teenager needs substance use counseling",
+     which is a youth request; it moved to the age checks below, because WIN
+     Recovery, a clinical provider, is documented as adults-only.) */
+  ["I need help with substance use", [expect.firstOneOf(["health-001", "recovery-015"]), expect.allBefore(CLINICAL, RESIDENTIAL)]],
+  ["my son needs help with heroin", [
+    expect.urgent(null), expect.first("recovery-014"), expect.inTop("health-001", 3), expect.allBefore(CLINICAL, RESIDENTIAL)]],
+  ["I need addiction treatment", [expect.urgent(null), expect.topWithin(CLINICAL, 3), expect.allBefore(CLINICAL, RESIDENTIAL)]],
+  /* ...a stated minor: the documented adults-only programs are listed last,
+     and no listing is claimed to accept minors */
+  ...["my 14 year old needs addiction treatment", "my 14 year old needs substance use counseling"].map(query => [query, [
+    expect.urgent(null), expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY),
+    expect.allBefore(["health-001", "recovery-015"], RESIDENTIAL)]]),
+  /* Independent review 2026-11-17: who needs the help, and how old.
+     Youth wording for that person ("my teen", "my adolescent daughter", "my
+     child", "my minor son") or an age under 18 keeps the documented
+     adults-only programs (WIN, Oak Street House, Odyssey House) after every
+     returned treatment listing whose age limit is not documented. Nothing
+     claims those listings serve minors. */
+  ...["My teen needs addiction treatment", "My teenager needs substance use counseling", "My adolescent daughter needs counseling",
+      "My child needs substance abuse counseling", "My minor son needs addiction treatment", "My 14 year old needs addiction treatment",
+      "My 17 year old daughter needs rehab"].map(query => [query, [
+    expect.urgent(null),
+    r => ADULTS_ONLY_RECOVERY.includes(r.ids[0]) ? `adults-only ${r.ids[0]} is first` : null,
+    expect.allBefore(["health-001", "recovery-015", "recovery-001", "recovery-016", "children-001"], ADULTS_ONLY_RECOVERY)]]),
+  ...["My teen needs addiction treatment", "My minor son needs addiction treatment", "My 14 year old needs addiction treatment",
+      "My teenager needs substance use counseling"].map(query => [query, [
+    expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY)]]),
+  ["My teenager needs substance use counseling", [expect.topWithin(["health-001", "recovery-015", "children-001"], 3)]],
+  ["My adolescent daughter needs counseling", [expect.first("children-001"), expect.listedLast(ADULTS_ONLY_RECOVERY)]],
+  ["My child needs substance abuse counseling", [expect.listedLast(ADULTS_ONLY_RECOVERY), expect.anyInTop(["health-001", "recovery-015", "children-001"], 3)]],
+  /* ...an adult age, "adult", an unqualified son or daughter, or a helper's
+     age ("my 14 year old daughter is helping me") leaves the ordinary order */
+  ["My 19 year old daughter needs addiction treatment", [expect.urgent(null), expect.sameOrderAs("My daughter needs addiction treatment"), expect.inTop("recovery-014", 3)]],
+  /* (the number itself also matches financial-001's text, as it did before) */
+  ["My daughter is 30 and needs rehab", [expect.urgent(null), expect.inTop("recovery-014", 4), expect.allBefore(["recovery-014"], RESIDENTIAL)]],
+  ...["My adult son needs addiction treatment", "My son needs addiction treatment", "I need addiction treatment",
+      "I am 30 and my 14 year old daughter is helping me find addiction treatment"].map(query => [query, [
+    expect.urgent(null), expect.inTop("recovery-014", 3), expect.allBefore(["recovery-014"], RESIDENTIAL)]]),
+  ["I need sober housing", [expect.inTop("recovery-002", 3)]],
+  /* ...and children named only as people the requester supports are not the person */
+  ["I need a job to support my kids", [expect.sameOrderAs("I need a job")]],
+  ["help with child custody", [expect.first("legal-001")]],
+  /* Section 8 asks for "photo ID for adults" in a household; that is not an adults-only program */
+  ["my kids need a place to stay", [expect.firstCategory("housing"), expect.returned("housing-003"),
+    () => adultsOnly(RESOURCES.find(r => r.id === "housing-003")) ? "housing-003 read as adults-only" : null]],
+  /* ...a housing request does the reverse: residential programs lead */
+  ["I need sober housing", [expect.topWithin(RESIDENTIAL, 5), expect.allBefore(RESIDENTIAL, CLINICAL)]],
+  ["I need recovery housing", [expect.topWithin(RESIDENTIAL, 5), expect.allBefore(RESIDENTIAL, CLINICAL)]],
+  ["I need somewhere to live while staying sober", [
+    expect.firstOneOf(RESIDENTIAL), expect.someCategory("housing", 5),
+    r => r.ids.slice(0, 5).some(id => CLINICAL.includes(id)) ? "a clinical provider is in the top 5 of a housing request" : null]],
+  /* ...and an organization named in the request still leads, housing or not */
+  ["Oak Street House", [expect.first("recovery-013")]],
+  ["Hamilton Center", [expect.inTop("health-001", 3), expect.returned("recovery-013")]],
+
+  /* 2026-11 final corrections: "emergency" no longer boosts listings under the
+     overdose guidance. Explicit emergencies keep their guidance, an overdose
+     search never lists emergency funds, and other emergency requests still
+     find emergency assistance. */
+  ...["overdosing", "my friend overdosed"].map(query => [query, overdose]),
+  ...["someone is unconscious", "my son is not breathing"].map(query => [query, [expect.urgent(EMERGENCY), expect.absent("crisis-003")]]),
+  ["emergency shelter tonight", [expect.urgent(null), expect.first("housing-002"), expect.returned("housing-001"), expect.absent("recovery-016")]],
+  ["emergency rental assistance", [expect.urgent(null), expect.inTop("financial-013", 3), expect.absent("recovery-016")]],
+  ["emergency utility assistance", [expect.urgent(null), expect.inTop("crisis-003", 3), expect.returned("financial-013"), expect.returned("financial-001")]],
+  ["panic attack", [expect.urgent(MENTAL), expect.first("crisis-001"), expect.absent("crisis-003"), expect.absent("recovery-016")]],
+
+  /* 2026-11 final corrections: naloxone searches reach the statewide listing,
+     which is information for getting a kit, not emergency help */
+  ...["naloxone", "narcan", "where can i get narcan"].map(query => [query, [expect.urgent(null), expect.first("recovery-016")]]),
+  ["i need a doctor", [expect.absent("recovery-016")]],
+  /* Independent review 2026-11-17: Overdose Lifeline describes its kits and
+     test strips as harm reduction supplies. An informational search gets no
+     overdose guidance; an overdose happening now still does. */
+  ...["harm reduction", "harm reduction supplies"].map(query => [query, [expect.urgent(null), expect.first("recovery-016")]]),
+  ["someone is overdosing right now", [expect.urgent(OVERDOSE), expect.first("recovery-016")]],
+  /* ...and Harrison Township's vouchers are not cash assistance */
+  ...["emergency cash", "emergency money"].map(query => [query, [expect.firstOneOf(["crisis-003", "financial-003"]),
+    r => r.ids.slice(0, 3).includes("financial-013") ? "financial-013 (vouchers, never cash) in the top 3 of a cash request" : null]]),
+
+  /* Final search corrections 2026-11-17. "Emergency" in a rent request says
+     how urgent it is; it is not a separate request for emergency funds or a
+     shelter. Listings that document rent help (Section 8 and the township
+     trustees) are the results. No township trustee documents cash payments. */
+  ...["emergency rental assistance", "emergency rent help", "emergency help with rent"].map(query => [query, [
+    expect.urgent(null), expect.inTop("financial-013", 3), expect.sameOrderAs("rental assistance"),
+    expect.noneOf(["housing-001", "housing-002", "crisis-003", "financial-003", "financial-009"])]]),
+  ...["emergency cash", "emergency money"].map(query => [query, [
+    r => r.ids.slice(0, 3).some(id => ["financial-013", "financial-014", "financial-015"].includes(id)) ? "a township trustee (no cash payments documented) in the top 3 of a cash request" : null]]),
+  ["emergency shelter", [expect.first("housing-002"), expect.noneOf(["financial-013", "financial-014", "financial-015"])]],
+  ...["Harrison Township Trustee", "Honey Creek Township Trustee", "Lost Creek Township Trustee"].map((query, i) => [query, [
+    expect.first(["financial-013", "financial-014", "financial-015"][i])]]),
+  ["township assistance", [expect.first("financial-013"), expect.returned("financial-014"), expect.returned("financial-015")]],
+
+  /* ...and "substance abuse" is substance use: it does not reach domestic
+     violence or child-abuse services through the word "abuse". The youth
+     order (adults-only programs last) still applies. */
+  ...["my child needs substance abuse counseling", "my teen needs substance abuse treatment", "I need substance abuse treatment",
+      "substance abuse", "drug abuse", "alcohol abuse", "substance abuse counseling", "prescription drug abuse"].map(query => [query, [
+    expect.urgent(null), expect.firstCategory("recovery"), expect.noneOf(["crisis-002", "children-006", "legal-006"])]]),
+  ...["my child needs substance abuse counseling", "my teen needs substance abuse treatment", "my teenager needs addiction counseling"].map(query => [query, [
+    expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY)]]),
+  ["substance use counseling", [expect.urgent(null), expect.firstOneOf(["health-001", "recovery-015"]), expect.absent("crisis-002")]],
+  /* ...while abuse by a person still reaches the services for it */
+  ...["I need domestic abuse help", "my partner is abusing me", "abuse", "sexual abuse"].map(query => [query, [expect.first("crisis-002")]]),
+  ["domestic violence shelter", [expect.first("housing-001"), expect.inTop("crisis-002", 3)]],
+  ["child abuse help", [expect.anyInTop(["children-006", "children-009"], 2), expect.returned("crisis-002")]],
+  ["my minor child is being abused", [expect.anyInTop(["children-006", "children-009", "crisis-002"], 2), expect.returned("children-009")]],
+  ["elder abuse", [expect.returned("crisis-002"), expect.someCategory("senior", 3)]],
+  ["CODA", [expect.returned("crisis-002"), expect.returned("children-006")]],
+
+  /* Release blockers 2026-11-17. A request for substance-use help and, in
+     the same request, help with domestic or sexual abuse answers both: the
+     "abuse" of "substance abuse" is not searched, the other "abuse" is. A
+     treatment listing (not a residential program) and CODA's crisis line
+     lead, and guidance is the same as for the abuse request alone. */
+  ...[["substance abuse and domestic abuse", "domestic abuse"], ["I need drug abuse help and domestic abuse help", "domestic abuse"],
+      ["alcohol abuse treatment and sexual abuse help", "sexual abuse"]].map(([query, alone]) => [query, [
+    expect.inTop("crisis-002", 3), expect.anyInTop(["health-001", "recovery-015", "recovery-014"], 3),
+    r => RESIDENTIAL.includes(r.ids[0]) ? `residential program ${r.ids[0]} first` : null,
+    r => { const g = run(alone).urgentAll; return JSON.stringify(r.urgentAll) === JSON.stringify(g) ? null : `guidance ${JSON.stringify(r.urgentAll)}, "${alone}" alone gives ${JSON.stringify(g)}`; }]]),
+  ["I need substance abuse counseling", [expect.urgent(null), expect.anyInTop(["health-001", "recovery-015", "recovery-014"], 2),
+    expect.noneOf(["crisis-002", "children-006", "legal-006"])]],
+  ["my teenager needs substance abuse treatment", [expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY),
+    expect.noneOf(["crisis-002", "children-006", "legal-006"])]],
+  ["domestic abuse", [expect.first("crisis-002"), expect.returned("housing-001")]],
+  ["child abuse", [expect.anyInTop(["children-006", "children-009"], 2), expect.returned("crisis-002")]],
+
+  /* ...the requester's own age is not the age of the person who needs help:
+     "i am 40" describes the parent, and the teen is the person. A stated
+     minor or youth wording keeps the documented adults-only programs last;
+     an adult beneficiary, or no one else named, keeps the ordinary order. */
+  ...["I am 40 and my teen needs addiction treatment", "I am 40. My teenager needs addiction treatment.",
+      "I am 40 years old and my teen needs addiction treatment", "My teenage daughter needs addiction treatment"].map(query => [query, [
+    expect.urgent(null), expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY)]]),
+  ["I am 35 and my 14 year old son needs counseling", [expect.first("children-001"), expect.listedLast(ADULTS_ONLY_RECOVERY)]],
+  ["My adolescent son needs treatment", [expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY)]],
+  ["My teen needs sober housing", [expect.firstOneOf(RESIDENTIAL), expect.listedLast(["recovery-013", "recovery-002"])]],
+  ...["I am 30 and my 14 year old daughter is helping me find addiction treatment", "My adult son needs addiction treatment",
+      "My 19 year old daughter needs addiction treatment", "My son needs addiction treatment", "I am 16 and my mom needs addiction treatment"].map(query => [query, [
+    expect.urgent(null), expect.first("recovery-014")]]),
+  ["My daughter is 30 and needs rehab", [expect.inTop("recovery-014", 4), expect.allBefore(["recovery-014"], RESIDENTIAL)]],
+  ["I need addiction treatment", [expect.first("health-001"), expect.inTop("recovery-014", 2)]],
+  ["I am 16 and need help with drugs", [expect.listedLast(ADULTS_ONLY_RECOVERY)]],
+
+  /* Final review 2026-11-17: a relative who is only mentioned, or who will
+     help ("my mom will help me", "my mom can drive me"), is not the person
+     who needs help, so the requester's own age still counts. A relative is
+     that person only when a need is said of them ("my mom needs", "my teen
+     needs") or help is asked for them ("for my son"). */
+  ...["I am 16 and my mom will help me find addiction treatment.", "I am 16 and need addiction treatment. My mom can drive me.",
+      "I am 16 and need addiction treatment.", "I am 16 and my mom is worried about my drinking"].map(query => [query, [
+    expect.urgent(null), expect.ageReading("explicit", false), expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY)]]),
+  ...["I am 40 and my teen needs addiction treatment.", "I am 40. My teenager needs addiction treatment.", "My teen needs addiction treatment."].map(query => [query, [
+    expect.urgent(null), expect.ageReading("possible", false), expect.firstOneOf(["health-001", "recovery-015"]), expect.listedLast(ADULTS_ONLY_RECOVERY)]]),
+  /* (education-009, "School Supplies Drive", matches "drive" here as it did at 91c0e11) */
+  ["My 16 year old son needs treatment, and I can drive him.", [
+    expect.urgent(null), expect.ageReading("explicit", false), expect.anyInTop(["health-001", "recovery-015"], 3), expect.listedLast(ADULTS_ONLY_RECOVERY)]],
+  ...["I am 30 and my 14 year old daughter is helping me find addiction treatment.", "My adult son needs addiction treatment."].map(query => [query, [
+    expect.urgent(null), expect.ageReading("no", true), expect.first("recovery-014")]]),
+  ["My daughter is 30 and needs rehab.", [expect.urgent(null), expect.ageReading("no", true), expect.inTop("recovery-014", 4), expect.allBefore(["recovery-014"], RESIDENTIAL)]],
+  ["My son needs addiction treatment.", [expect.urgent(null), expect.ageReading("no", false), expect.first("recovery-014")]],
+  ["I am 19 and need addiction treatment.", [expect.urgent(null), expect.ageReading("no", true), expect.inTop("recovery-014", 2), expect.allBefore(["recovery-014"], RESIDENTIAL)]],
+  ["I am 16 and my mom needs addiction treatment", [expect.ageReading("no"), expect.first("recovery-014")]],
+  ["I am 16 and my dad is using meth", [expect.ageReading("no")]]
 ];
 
 function runSuite() {
@@ -1006,11 +1239,117 @@ function runSuite() {
   rows.push({query:`(average search time ${average.toFixed(1)} ms; budget 50 ms)`, result:{ids:[], urgent:null}, failures: average <= 50 ? [] : ["search too slow"]});
   if (average > 50) failed++;
 
-  /* Eligibility stays visible on a cross-category match. */
-  const gasCard = renderCard(RESOURCES.find(r => r.id === "employment-006"));
-  const eligibilityOk = gasCard.includes("Proof of employment offer.");
-  rows.push({query:"(employment-006 card shows its eligibility requirement)", result:{ids:[], urgent:null}, failures: eligibilityOk ? [] : ["requirement not shown"]});
+  /* Eligibility stays visible on a card. (This check used employment-006,
+     which the 2026-11 accuracy patch withheld: the gas-card program could
+     not be verified. It now uses WIN Recovery's documented age requirement.) */
+  const eligibilityCard = renderCard(RESOURCES.find(r => r.id === "recovery-014"));
+  const eligibilityOk = eligibilityCard.includes("Must be 18 or older.");
+  rows.push({query:"(recovery-014 card shows its eligibility requirement)", result:{ids:[], urgent:null}, failures: eligibilityOk ? [] : ["requirement not shown"]});
   if (!eligibilityOk) failed++;
+
+  /* 2026-11 accuracy patch. Evidence for every item is recorded in
+     tests/audit/resource-accuracy-2026-11-16.md. */
+  const accuracy = [];
+  /* ...listings withheld because their provider, program or contact details
+     could not be verified are not in the dataset, so no search, category or
+     crisis path can reach them */
+  const WITHHELD = ["health-002", "health-004", "recovery-009", "crisis-004", "housing-004", "employment-006", "transport-004",
+    "children-003", "children-008", "financial-002", "employment-008", "children-002", "legal-004", "immigration-001",
+    /* Club Soda Sober Living: residents vacated under a city order (WTHI, 2026-09-16 and 2026-09-18); no reopening documented */
+    "recovery-010"];
+  WITHHELD.filter(id => RESOURCES.some(r => r.id === id)).forEach(id => accuracy.push(`${id} is withheld but still in the dataset`));
+  const allText = r => [r.name, r.description, r.address, r.phone, r.website, r.requirements, (r.tags || []).join(" ")].join(" | ");
+  [[/capwi/i, "CAPWI (does not serve Vigo County)"], [/1440 S\.? ?3rd/i, "1440 S 3rd St"], [/812-232-1201|1515 S\.? ?3rd/i, "former Indiana Legal Services Terre Haute office"],
+   [/812-917-0100/, "unverified Terre Haute CARES number"], [/centerstone/i, "Centerstone (no Terre Haute location)"],
+   [/neighborhood health clinic/i, "Neighborhood Health Clinic"], [/kathy'?s hope/i, "Kathy's Hope"], [/\bDCFS\b/, "DCFS"],
+   [/tenant rights hotline/i, "Tenant Rights Hotline"], [/club soda|1330 lafayette|812-841-6319/i, "Club Soda Sober Living"]].forEach(([pattern, label]) => {
+    const hits = RESOURCES.filter(r => pattern.test(allText(r))).map(r => r.id);
+    if (hits.length) accuracy.push(`${label} still listed: ${hits.join(" ")}`);
+  });
+  ["Centerstone", "Neighborhood Health Clinic", "Kathy's Hope", "Terre Haute CARES", "CAPWI", "tenant rights hotline",
+   "Club Soda", "sober living", "co-ed sober living", "recovery housing", "I need somewhere to live while staying sober"].forEach(query => {
+    const found = searchResources(RESOURCES, query, "en").results.filter(r => WITHHELD.includes(r.id)).map(r => r.id);
+    if (found.length) accuracy.push(`"${query}" returns withheld ${found.join(" ")}`);
+  });
+  /* ...corrected facts */
+  const fact = (id, field, expected) => {
+    const r = RESOURCES.find(x => x.id === id);
+    if (!r) accuracy.push(`${id} missing`);
+    else if (r[field] !== expected) accuracy.push(`${id} ${field} is "${r[field]}", expected "${expected}"`);
+  };
+  ["legal-001", "legal-011", "immigration-004"].forEach(id => { fact(id, "phone", "1-844-243-8570"); fact(id, "address", "Apply by phone or online"); });
+  fact("financial-012", "address", "Vigo County Annex, 163 Oak St, Terre Haute, IN 47807"); fact("financial-012", "phone", "812-462-3261");
+  fact("financial-008", "address", "721 Elm St, Terre Haute, IN 47807"); fact("financial-008", "phone", "812-232-5052");
+  ["food-002", "financial-005"].forEach(id => { fact(id, "address", "2901 Wabash Ave, Suite 200, Terre Haute, IN 47803"); fact(id, "phone", "800-403-0864"); });
+  fact("financial-001", "phone", "812-234-3517"); fact("education-002", "phone", "812-232-3917");
+  ["financial-001", "financial-011", "education-002", "food-004", "children-007"].forEach(id => fact(id, "website", "https://www.wicaa.org"));
+  if (!/^Terre Haute Housing Authority/.test((RESOURCES.find(r => r.id === "housing-003") || {}).name || "")) accuracy.push("housing-003 is not named Terre Haute Housing Authority");
+  /* ...the verification date was advanced only on listings whose every
+     displayed field was read on an official page; no other listing is stamped */
+  const STAMPED = ["financial-005", "financial-008", "financial-012", "financial-013", "food-002", "immigration-004", "legal-001", "legal-011", "recovery-016"];
+  const stamped = RESOURCES.filter(r => r.lastVerified === "2026-11").map(r => r.id).sort();
+  if (JSON.stringify(stamped) !== JSON.stringify(STAMPED)) accuracy.push(`listings dated 2026-11 are ${stamped.join(" ")}, expected ${STAMPED.join(" ")}`);
+  /* ...the naloxone listing names no Terre Haute location and offers no directions */
+  const naloxone = RESOURCES.find(r => r.id === "recovery-016");
+  if (!naloxone) accuracy.push("recovery-016 missing");
+  else {
+    if (!/^For an overdose happening now, call 911\./.test(naloxone.description)) accuracy.push("recovery-016 does not begin with the 911 instruction");
+    if (/terre haute|vigo/i.test(allText(naloxone))) accuracy.push("recovery-016 names a local location");
+    if (renderCard(naloxone).includes("maps.google.com")) accuracy.push("recovery-016 offers directions");
+    if (!naloxone.tags.includes("harm reduction")) accuracy.push("recovery-016 lacks its harm reduction tag (Overdose Lifeline's own wording)");
+  }
+  /* ...Honey Creek Township Trustee: 6553 S Carlisle St is Fire Station 91,
+     and no source gives the trustee's current office or hours, so the card
+     offers neither an address, Directions nor fixed hours; the phone, from a
+     2020 news report, is shown with that qualification */
+  const honey = RESOURCES.find(r => r.id === "financial-014");
+  if (!honey) accuracy.push("financial-014 missing");
+  else {
+    const card = renderCard(honey);
+    if (/6553|carlisle|margaret/i.test(allText(honey) + " " + card)) accuracy.push("financial-014 shows an unverified office address");
+    if (card.includes("maps.google.com")) accuracy.push("financial-014 offers Directions");
+    if (/\d\s?(?:am|pm)\b|\bmon\b|mon–fri/i.test(honey.hours)) accuracy.push(`financial-014 advertises fixed hours "${honey.hours}"`);
+    if (!card.includes('href="tel:8122351012"')) accuracy.push("financial-014 has no phone link");
+    if (!/has not been reconfirmed/.test(honey.requirements)) accuracy.push("financial-014 phone is not qualified as unconfirmed");
+    if (/emergency/i.test(honey.description)) accuracy.push("financial-014 still claims emergency assistance");
+    /* No current source confirms the listing, so it carries no verification
+       date (its earlier "2026-04" is kept in the audit record) and the card
+       shows no "Verified" label. */
+    if (honey.lastVerified !== "") accuracy.push(`financial-014 claims verification "${honey.lastVerified}"`);
+    if (/rc-updated|Verified/.test(card)) accuracy.push("financial-014 card shows a verification badge");
+  }
+  /* ...Harrison Township issues vouchers, never cash; no other trustee's
+     source documents cash payments */
+  ["financial-013", "financial-014", "financial-015"].forEach(id => {
+    if (((RESOURCES.find(r => r.id === id) || {}).tags || []).some(tag => /cash/i.test(tag))) accuracy.push(`${id} is tagged as cash assistance`);
+  });
+  rows.push({query:"(2026-11 accuracy patch: withheld listings unreachable, corrected facts in place)", result:{ids:[], urgent:null}, failures:accuracy});
+  if (accuracy.length) failed++;
+
+  /* Dataset integrity. Listings known to lack both a phone and a website are
+     named, so a new one fails here (they are queued for owner verification). */
+  const integrity = [];
+  const seen = new Set();
+  RESOURCES.forEach(r => { if (seen.has(r.id)) integrity.push(`duplicate id ${r.id}`); seen.add(r.id); });
+  const NO_CONTACT_KNOWN = ["recovery-003", "recovery-007", "recovery-012", "education-009"];
+  /* Listings whose verification date was withdrawn because no current
+     source confirms them (audit record, financial-014). Only these may have
+     no date, and each must have none. */
+  const UNVERIFIED_KNOWN = ["financial-014"];
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  RESOURCES.forEach(r => {
+    if (!/^[a-z]+-\d{3}$/.test(r.id)) integrity.push(`${r.id}: unexpected id format`);
+    if (!CATEGORY_META[r.category]) integrity.push(`${r.id}: unknown category ${r.category}`);
+    if (!String(r.name || "").trim() || !String(r.description || "").trim()) integrity.push(`${r.id}: missing name or description`);
+    if (r.phone && !/^(?:(?:1-)?\d{3}-\d{3}-\d{4}|211|988|911)$/.test(r.phone)) integrity.push(`${r.id}: phone format "${r.phone}"`);
+    if (r.website && !/^https?:\/\/[^\s"<>]+$/.test(r.website)) integrity.push(`${r.id}: website "${r.website}"`);
+    if (UNVERIFIED_KNOWN.includes(r.id)) { if (r.lastVerified !== "") integrity.push(`${r.id}: listed as unverified but dated "${r.lastVerified}"`); }
+    else if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(r.lastVerified || "") || r.lastVerified > thisMonth) integrity.push(`${r.id}: lastVerified "${r.lastVerified}"`);
+    if (!r.phone && !r.website && !NO_CONTACT_KNOWN.includes(r.id)) integrity.push(`${r.id}: no phone and no website`);
+    if (!Array.isArray(r.tags)) integrity.push(`${r.id}: tags missing`);
+  });
+  rows.push({query:`(dataset integrity: ${RESOURCES.length} listings)`, result:{ids:[], urgent:null}, failures:integrity});
+  if (integrity.length) failed++;
 
   /* Directory corrections: the address shown and the Directions destination agree. */
   const dataChecks = [];
@@ -1034,10 +1373,15 @@ function runSuite() {
   };
   const byId = id => RESOURCES.find(r => r.id === id);
   const directionChecks = [];
-  ["recovery-001", "recovery-003", "recovery-005", "recovery-006", "recovery-009", "recovery-011", "recovery-012", "recovery-013",
-   "transport-002", "transport-003", "legal-009", "legal-011", "education-009", "education-010", "employment-005", "employment-011",
-   "immigration-001", "immigration-003", "immigration-004", "senior-006", "crisis-004", "housing-001"].forEach(id => {
-    const to = directionsTo(byId(id));
+  /* (recovery-009, immigration-001 and crisis-004 were in this list until the
+     2026-11 accuracy patch withheld them; legal-001 and education-003 were
+     added when their addresses became "apply by phone or online") */
+  ["recovery-001", "recovery-003", "recovery-005", "recovery-006", "recovery-011", "recovery-012", "recovery-013",
+   "transport-002", "transport-003", "legal-001", "legal-009", "legal-011", "education-003", "education-009", "education-010",
+   "employment-005", "employment-011", "immigration-003", "immigration-004", "senior-006", "housing-001"].forEach(id => {
+    const r = byId(id);
+    if (!r) { directionChecks.push(`${id} missing from the dataset`); return; }
+    const to = directionsTo(r);
     if (to) directionChecks.push(`${id} offers directions to "${to}"`);
   });
   [["food-001", "430 N 14 1/2 St, Terre Haute, IN 47807"], ["transport-007", "750 Cherry St, Terre Haute, IN 47807"],
@@ -1046,8 +1390,13 @@ function runSuite() {
    ["recovery-002", "1547 S 7th St, Terre Haute, IN 47802"],
    /* Codex review: the named library (same phone as legal-003 at One
       Library Square) is a public destination */
-   ["legal-010", "Vigo County Library"], ["legal-012", "Vigo County Library"]].forEach(([id, address]) => {
-    const to = directionsTo(byId(id));
+   ["legal-010", "Vigo County Library"], ["legal-012", "Vigo County Library"],
+   /* 2026-11 accuracy patch: verified office addresses */
+   ["financial-012", "Vigo County Annex, 163 Oak St, Terre Haute, IN 47807"], ["financial-008", "721 Elm St, Terre Haute, IN 47807"],
+   ["financial-005", "2901 Wabash Ave, Suite 200, Terre Haute, IN 47803"]].forEach(([id, address]) => {
+    const r = byId(id);
+    if (!r) { directionChecks.push(`${id} missing from the dataset`); return; }
+    const to = directionsTo(r);
     if (to !== address) directionChecks.push(`${id} directions go to "${to}", expected "${address}"`);
   });
   if (!/>\s*(?:<svg[\s\S]*?<\/svg>)?\s*Directions to transit office</.test(renderCard(byId("transport-001")))) directionChecks.push("transit office label missing");
