@@ -2053,7 +2053,7 @@ function renderCard(r) {
   const noConf  = hasNavigableAddress(r.address);
 
   /* A11Y (2.4.4 / 2.4.9): each action link carries the organisation name in its
-     accessible name, so "Call now" repeated 134 times is distinguishable when a
+     accessible name, so "Call now" repeated on every card is distinguishable when a
      screen reader lists links out of context. */
   const btnCall = r.phone
     ? `<a href="tel:${telHref}" class="rc-btn rc-btn-primary">${SVG.phone} Call now<span class="visually-hidden"> — ${esc(r.name)}</span></a>` : "";
@@ -2398,9 +2398,25 @@ function buildCatList() {
     const btn = e.target.closest(".cat-row");
     if (btn && btn.dataset.category) filterCategory(btn.dataset.category);
   });
+}
 
-  const el = document.getElementById("statResources");
-  if (el) el.textContent = RESOURCES.length;
+/* Homepage counters. index.html carries both numbers in its markup so they
+   paint together with the rest of the hero; filling one from script left it
+   blank beside the other until the scripts arrived. Both are recomputed here
+   from the published data in one step, and the UI checks keep the markup
+   equal to these values, so this never changes what is already shown. */
+function heroStats(resources = RESOURCES) {
+  const categories = new Set(resources.map(r => r.category).filter(c => CATEGORY_META[c]));
+  return {resources: resources.length, categories: categories.size};
+}
+
+function renderHeroStats() {
+  const resourcesEl = document.getElementById("statResources");
+  const categoriesEl = document.getElementById("statCategories");
+  if (!resourcesEl || !categoriesEl) return;
+  const stats = heroStats();
+  if (resourcesEl.textContent !== String(stats.resources)) resourcesEl.textContent = stats.resources;
+  if (categoriesEl.textContent !== String(stats.categories)) categoriesEl.textContent = stats.categories;
 }
 
 function initSearchHandlers(){
@@ -2451,6 +2467,7 @@ if (typeof module !== "undefined" && module.exports) {
 if (typeof document !== "undefined") {
   document.addEventListener("DOMContentLoaded", () => {
     buildCatList();
+    renderHeroStats();
     initSearchHandlers();
   });
 }

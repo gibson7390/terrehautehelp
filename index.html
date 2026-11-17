@@ -49,6 +49,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="styles.css?v=20261025-220542" />
+  <style>
+    /* Both hero counters are in the markup. On a slow connection the page can
+       arrive in pieces; until the second counter has arrived, the row keeps its
+       space but stays invisible, so one number never shows beside a blank. */
+    .hero-stats:not(:has(> .hero-stat:nth-child(2) > .hero-stat-label)){visibility:hidden}
+  </style>
 
   <script type="application/ld+json">
   {
@@ -183,11 +189,11 @@
           <p class="hero-sub">A free directory of local resources for Vigo County residents — food, housing, healthcare, legal aid, financial assistance, and more.</p>
           <div class="hero-stats" data-nosnippet>
             <div class="hero-stat">
-              <div class="hero-stat-num" id="statResources"></div>
+              <div class="hero-stat-num" id="statResources">120</div>
               <div class="hero-stat-label">Resources listed</div>
             </div>
             <div class="hero-stat">
-              <div class="hero-stat-num">15</div>
+              <div class="hero-stat-num" id="statCategories">15</div>
               <div class="hero-stat-label">Categories</div>
             </div>
           </div>
@@ -386,6 +392,6 @@
   <script src="site.js?v=20261025-220542"></script>
 
   <script src="resources.js?v=20261117-083419"></script>
-  <script src="app.js?v=20261117-093527"></script>
+  <script src="app.js?v=20261117-122517"></script>
 </body>
 </html>

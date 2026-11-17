@@ -437,6 +437,65 @@ ui("homepage", "the Free / Always statistic is gone; resource and category count
   if (nums[0] !== String(G("RESOURCES").length)) f.push(`resource count shows ${nums[0]}`);
   return f;
 }, {kind:"homepage"});
+
+/* Staging acceptance, 2026-11-17: "15 Categories" painted at once while
+   "Resources listed" stayed blank until the scripts ran, then the label moved
+   when the number arrived. Both numbers are now in the markup. */
+const publishedCounts = () => {
+  const resources = G("RESOURCES"), meta = G("CATEGORY_META");
+  return [String(resources.length), String(new Set(resources.map(r => r.category).filter(c => meta[c])).size)];
+};
+ui("homepage", "both counters are in the served markup and equal the published data", async () => {
+  const html = await (await fetch("../../index.html", {cache:"no-store"})).text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const markup = [...doc.querySelectorAll(".hero-stats .hero-stat-num")].map(el => el.textContent.trim());
+  const expected = publishedCounts();
+  const live = [...D().querySelectorAll(".hero-stats .hero-stat-num")].map(el => el.textContent.trim());
+  const f = [];
+  if (markup.length !== 2) f.push(`${markup.length} counters in the markup`);
+  if (markup.some(n => !n)) f.push(`a counter is blank in the markup: [${markup.join(" | ")}]`);
+  if (markup.join() !== expected.join()) f.push(`markup shows ${markup.join(" / ")}, published data has ${expected.join(" / ")}`);
+  if (live.join() !== markup.join()) f.push(`scripts changed the counters from ${markup.join(" / ")} to ${live.join(" / ")}`);
+  const publicText = [doc.title, doc.body.textContent, ...[...doc.querySelectorAll("meta[content], [aria-label]")].map(el => el.getAttribute("content") || el.getAttribute("aria-label"))].join(" ");
+  if (/\b134\b/.test(publicText)) f.push("index.html still shows the former total of 134");
+  return f;
+}, {kind:"homepage", sev:"high"});
+ui("homepage", "a counter row that has only partly arrived stays invisible", async () => {
+  const d = D(), row = d.querySelector(".hero-stats"), f = [];
+  const visibility = el => W().getComputedStyle(el).visibility;
+  if (visibility(row) !== "visible") f.push(`complete row is ${visibility(row)}`);
+  const firstOnly = row.cloneNode(true);
+  firstOnly.lastElementChild.remove();
+  const noSecondLabel = row.cloneNode(true);
+  noSecondLabel.querySelectorAll(".hero-stat-label")[1].remove();
+  for (const [name, clone] of [["first counter only", firstOnly], ["second counter without its label", noSecondLabel]]) {
+    row.after(clone);
+    if (visibility(clone) !== "hidden") f.push(`${name}: row is ${visibility(clone)}`);
+    clone.remove();
+  }
+  return f;
+}, {kind:"homepage"});
+[320, 375, 768, 1280].forEach(width => {
+  ui("layout", `homepage counters share one baseline and are both shown at ${width}px`, async () => {
+    const f = [];
+    try {
+      await loadPageAt("index.html", width);
+      const d = D();
+      const nums = [...d.querySelectorAll(".hero-stats .hero-stat-num")];
+      const labels = [...d.querySelectorAll(".hero-stats .hero-stat-label")];
+      if (nums.length !== 2 || labels.length !== 2) return [`${nums.length} counters, ${labels.length} labels`];
+      nums.forEach((n, i) => { if (!n.textContent.trim() || !n.getBoundingClientRect().height) f.push(`counter ${i + 1} is empty`); });
+      const tops = labels.map(l => Math.round(l.getBoundingClientRect().top));
+      /* Side by side, the labels line up; wrapped (narrow phones), each label sits
+         under a number of the same height */
+      const sameRow = Math.abs(nums[0].getBoundingClientRect().top - nums[1].getBoundingClientRect().top) < 1;
+      if (sameRow && tops[0] !== tops[1]) f.push(`labels at ${tops.join(" and ")}px`);
+      const heights = nums.map(n => Math.round(n.getBoundingClientRect().height));
+      if (heights[0] !== heights[1]) f.push(`counter heights ${heights.join(" and ")}px`);
+    } finally { frame.style.width = ""; }
+    return f;
+  }, {kind:"layout"});
+});
 ui("homepage", "transportation card has two separate native actions and no nested controls", async () => {
   const card = D().querySelector(".sit-card-split");
   const f = [];

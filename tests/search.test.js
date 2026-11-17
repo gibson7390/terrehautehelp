@@ -1406,6 +1406,33 @@ function runSuite() {
   rows.push({query:"(directions only to usable destinations)", result:{ids:[], urgent:null}, failures:directionChecks});
   if (directionChecks.length) failed++;
 
+  /* Homepage counters (staging acceptance, 2026-11-17): "Categories" showed at
+     once while "Resources listed" stayed blank until the scripts ran. Both
+     numbers now come from the published data together. The markup values are
+     checked against the data by the UI checks (tests/eval/ui.js), which can
+     read index.html over http. */
+  const counterChecks = [];
+  const stats = heroStats();
+  if (stats.resources !== RESOURCES.length) counterChecks.push(`resources ${stats.resources}, dataset has ${RESOURCES.length}`);
+  /* Browse lists every category, so each must have a published listing for
+     the counter to match what Browse shows */
+  const emptyCategories = Object.keys(CATEGORY_META).filter(k => !RESOURCES.some(r => r.category === k));
+  if (emptyCategories.length) counterChecks.push(`categories with no listings: ${emptyCategories.join(" ")}`);
+  if (stats.categories !== Object.keys(CATEGORY_META).length) counterChecks.push(`categories ${stats.categories}, Browse lists ${Object.keys(CATEGORY_META).length}`);
+  const fixtureStats = heroStats([{category:"food"}, {category:"food"}, {category:"pet"}]);
+  if (fixtureStats.resources !== 3 || fixtureStats.categories !== 2) counterChecks.push(`fixture counted ${JSON.stringify(fixtureStats)}, expected 3 resources in 2 categories`);
+  /* One call fills both, whatever either showed before */
+  const counterFixture = document.createElement("div");
+  counterFixture.hidden = true;
+  counterFixture.innerHTML = `<div id="statResources"></div><div id="statCategories">99</div>`;
+  document.body.appendChild(counterFixture);
+  renderHeroStats();
+  const shown = [counterFixture.querySelector("#statResources").textContent, counterFixture.querySelector("#statCategories").textContent];
+  counterFixture.remove();
+  if (shown[0] !== String(RESOURCES.length) || shown[1] !== String(stats.categories)) counterChecks.push(`renderHeroStats shows ${shown.join(" / ")}`);
+  rows.push({query:`(homepage counters: ${stats.resources} resources, ${stats.categories} categories, filled together)`, result:{ids:[], urgent:null}, failures:counterChecks});
+  if (counterChecks.length) failed++;
+
   return {rows, failed, total: rows.length};
 }
 
